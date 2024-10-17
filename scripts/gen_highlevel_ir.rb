@@ -1,0 +1,278 @@
+#! /usr/bin/env ruby
+
+# Copyright (c) 2021-2024, David H. Hovemeyer <david.hovemeyer@gmail.com>
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a
+# copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation
+# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the
+# Software is furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+# OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+# ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+
+# Arithmetic and data movement operations: these will be generated in
+# 4 different "widths": byte (8 bit), word (16 bit), long (32 bit),
+# quad (64 bit)
+ARITH = [
+  # Arithmetic
+  :add,
+  :sub,
+  :mul,
+  :div,
+  :mod,
+  :lshift,
+  :rshift,
+
+  # Integer comparisons to compute a boolean value:
+  # note that all of these assign to a destination vreg
+  :cmplt,
+  :cmplte,
+  :cmpgt,
+  :cmpgte,
+  :cmpeq,
+  :cmpneq,
+
+  # Bitwise operations
+  :and,
+  :or,
+  :xor,
+
+  # Unary ALU opcodes
+  :neg,     # Unary negation (numeric)
+  :not,     # Unary not (logical)
+  :compl,   # Bitwise complement
+  :inc,     # Increment integer
+  :dec,     # Decrement integer
+
+  # The (variants of the) mov instruction is used for
+  # all moves of data values involving some combination of
+  # registers, immediate values, and memory locations.
+  :mov,
+
+  # Spill and restore (there are variants of these for the various
+  # operand sizes)
+  :spill,
+  :restore,
+]
+
+SIZES = [ :b, :w, :l, :q ]
+
+NBYTES = {
+  :b => 1,
+  :w => 2,
+  :l => 4,
+  :q => 8,
+}
+
+def promotions(s)
+  pairs = (0..SIZES.length-1).to_a.product((1..SIZES.length-1).to_a)
+
+  # Array#filter exists only in Ruby 2.7 or higher
+  #pairs = pairs.filter { |pair| pair[0] < pair[1] }
+
+  # Only the pairs where the source size is smaller than the dest
+  # size are needed
+  filtered_pairs = []
+  pairs.each do |pair|
+    filtered_pairs.push(pair) if pair[0] < pair[1]
+  end
+  pairs = filtered_pairs
+
+  return pairs.map { |pair| "#{s}_#{SIZES[pair[0]]}#{SIZES[pair[1]]}".to_sym }
+end
+
+OPCODES = [
+  :nop,
+
+  # Include the arithmetic and data movement operations,
+  # with variations for different operand sizes
+  *(ARITH.product(SIZES).map { |pair| "#{pair[0]}_#{pair[1]}".to_sym }),
+
+  # Signed promotions (convert less-precise value to a more-precise type)
+  *promotions("sconv"),
+
+  # Unsigned promotions (convert less-precise value to a more-precise type)
+  *promotions("uconv"),
+
+  # control flow
+  :ret,
+  :jmp,
+  :call,
+
+  # Enter the stack frame. Allocates specified amount of local storage.
+  :enter,
+
+  # Leave the stack frame. Should deallocate the amount of storage
+  # that the enter instruction allocated.
+  :leave,
+
+  # Compute the address of a variable at a specified (immediate) offset
+  # in local storage, storing it in a vreg.
+  :localaddr,
+
+  # conditional jump
+  :cjmp_t,    # conditional jump if boolean is true
+  :cjmp_f,    # conditional jump if boolean is false
+]
+
+$opcode_names = OPCODES.map { |sym| "HINS_#{sym.to_s}" }
+
+#opcode_names.each do |opcode_name|
+#  puts opcode_name
+#end
+
+def gen_operand_size_fn(outf, fn_name, is_src)
+
+  outf.print <<"EOF5"
+
+int #{fn_name}(HighLevelOpcode opcode) {
+  switch (opcode) {
+EOF5
+
+  $opcode_names.each do |opcode_name|
+    operand_size = 0
+    opcode_name_str = opcode_name.to_s
+
+    if m = /_([bwlq][bwlq])$/.match(opcode_name_str)
+      suffix = m[1]
+      size_suffix = is_src ? suffix[0] : suffix[1]
+      raise "Huh?" if !NBYTES.has_key?(size_suffix.to_sym)
+      operand_size = NBYTES[size_suffix.to_sym]
+    elsif opcode_name_str.end_with?('_b')
+      operand_size = 1
+    elsif opcode_name_str.end_with?('_w')
+      operand_size = 2
+    elsif opcode_name_str.end_with?('_l')
+      operand_size = 4
+    elsif opcode_name_str.end_with?('_q')
+      operand_size = 8
+    elsif opcode_name_str == 'HINS_localaddr'
+      operand_size = 8
+    end
+    outf.puts "  case #{opcode_name}: return #{operand_size};"
+  end
+
+  outf.print <<"EOF6"
+  default: return 0;
+  }
+}
+EOF6
+end
+
+# Generate highlevel.h
+File.open('build/highlevel.h', 'w') do |outf|
+  outf.print <<'EOF1'
+#ifndef HIGHLEVEL_H
+#define HIGHLEVEL_H
+
+#include "formatter.h"
+#include "instruction.h"
+
+// Generated high-level opcodes and support functions/classes
+// Do not edit this file!
+
+//! @file
+//! HighLevelOpcode enumeration and associated helper functions and
+//! the HighLevelInstructionProperties class.
+
+//! Enumeration of high-level opcodes.
+enum HighLevelOpcode {
+EOF1
+
+  $opcode_names.each do |opcode_name|
+    outf.puts "  #{opcode_name},"
+  end
+
+  outf.print <<'EOF2'
+}; // HighLevelOpcode enumeration
+
+//! Translate a high-level opcode to its assembler mnemonic.
+//! Returns nullptr if the opcode is unknown.
+//!
+//! @param opcode a HighLevelOpcode
+//! @return assembler mnemonic for the high-level opcode
+const char *highlevel_opcode_to_str(HighLevelOpcode opcode);
+
+//! Determine the source operand size (int bytes) implied by a specified
+//! opcode. If the opcode doesn't have a source operand conveying data,
+//! 0 is returned.
+//!
+//! @param opcode a HighLevelOpcode
+//! @return the source operand size in bytes, or 0 if the instruction doesn't
+//!         have a source operand
+int highlevel_opcode_get_source_operand_size(HighLevelOpcode opcode);
+
+//! Determine the destination operand size (int bytes) implied by a specified
+//! opcode. If the opcode doesn't have a destination operand,
+//! 0 is returned.
+//!
+//! @param opcode a HighLevelOpcode
+//! @return the destination operand size in bytes, or 0 if the instruction doesn't
+//!         have a destination operand
+int highlevel_opcode_get_dest_operand_size(HighLevelOpcode opcode);
+
+//! HighLevelInstructionProperties class:
+//! this is used by ControlFlowGraphBuilder to make sense of
+//! control flow involving high-level instructions.
+class HighLevelInstructionProperties {
+public:
+  //! Determine whether an Instruction is a function call.
+  //! @param ins an Instruction
+  //! @return true if the instuction is a function call, false otherwise
+  bool is_function_call(Instruction *ins) const {
+    return ins->get_opcode() == HINS_call;
+  }
+
+  //! Determine whether it is possible for an Instruction to fall through
+  //! to the next sequential instruction in program order.
+  //! @param ins an Instruction
+  //! @return true if the instuction can fall through to the next sequential
+  //!         instruction in program order, false otherwise
+  bool falls_through(Instruction *ins) const {
+    // only an unconditional jump instruction does not fall through
+    return ins->get_opcode() != HINS_jmp;
+  }
+};
+
+#endif // HIGHLEVEL_H
+EOF2
+end
+
+File.open('build/highlevel.cpp', 'w') do |outf|
+  outf.print <<'EOF3'
+#include "highlevel.h"
+
+// Generated high-level opcodes (support functions/classes)
+// Do not edit this file!
+
+const char *highlevel_opcode_to_str(HighLevelOpcode opcode) {
+  switch (opcode) {
+EOF3
+
+  $opcode_names.each do |opcode_name|
+    len = opcode_name.length
+    mnemonic = opcode_name[5..len-1]
+    pad = ' ' * (16 - len)
+    outf.puts "  case #{opcode_name}:#{pad}return \"#{mnemonic}\";"
+  end
+
+  outf.print <<'EOF4'
+  default: return nullptr;
+  } // end switch
+} // end opcode_to_str function
+EOF4
+
+  gen_operand_size_fn(outf, 'highlevel_opcode_get_source_operand_size', true)
+  gen_operand_size_fn(outf, 'highlevel_opcode_get_dest_operand_size', false)
+end
+
+# Generate highlevel.cpp
