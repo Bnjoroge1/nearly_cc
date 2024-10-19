@@ -37,6 +37,7 @@ private:
   const Options &m_options;
   SymbolTable *m_global_symtab, *m_cur_symtab;
   SymbolTableList m_all_symtabs;
+  std::shared_ptr<Type> m_var_type;
 
 public:
   SemanticAnalysis(const Options &options);
@@ -75,6 +76,8 @@ public:
   virtual void visit_literal_value(Node *n);
 
 private:
+  bool is_constant_expression(Node *n);
+  int evaluate_constant_expression(Node *n);
   //! Enter a nested scope.
   //! @param name the name of the nested scope
   //! @return pointer to the new SymbolTable representing the scope being entered

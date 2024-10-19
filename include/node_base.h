@@ -40,6 +40,8 @@
 class NodeBase : public HasOperand {
 private:
   // TODO: fields (pointer to Type, pointer to Symbol, etc.)
+  std::shared_ptr<Type> m_type;
+  Symbol *m_symbol;
 
   // copy ctor and assignment operator not supported
   NodeBase(const NodeBase &);
@@ -48,6 +50,10 @@ private:
 public:
   NodeBase();
   virtual ~NodeBase();
+  void set_type(const std::shared_ptr<Type> &type);
+  std::shared_ptr<Type> get_type() const;
+  void set_symbol(Symbol *symbol);
+  Symbol *get_symbol() const;
 
   // TODO: add member functions
 };

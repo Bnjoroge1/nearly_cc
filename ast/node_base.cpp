@@ -20,13 +20,28 @@
 
 #include <cassert>
 #include "node_base.h"
+#include "type.h"
 
 NodeBase::NodeBase()
-  // TODO: initialize member variables (e.g., pointer to Symbol)
-{
+  : m_type(nullptr), m_symbol(nullptr) {
 }
 
 NodeBase::~NodeBase() {
 }
+  void NodeBase::set_type(const std::shared_ptr<Type> &type) {
+    m_type = type;
+  }
+
+  std::shared_ptr<Type> NodeBase::get_type() const {
+    return m_type;
+  }
+
+  void NodeBase::set_symbol(Symbol *symbol) {
+    m_symbol = symbol;
+  }
+
+  Symbol *NodeBase::get_symbol() const {
+    return m_symbol;
+  }
 
 // TODO: implement member functions
