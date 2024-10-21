@@ -530,6 +530,12 @@ void StructType::calculate_storage() const {
 FunctionType::FunctionType(std::shared_ptr<Type> base_type)
   : HasBaseType(base_type) {
 }
+FunctionType::FunctionType(std::shared_ptr<Type> return_type, const std::vector<std::shared_ptr<Type>>& param_types)
+  : HasBaseType(return_type) {
+  for (const auto& param_type : param_types) {
+    add_member(Member("", param_type));
+  }
+}
 
 FunctionType::~FunctionType() {
 }
@@ -571,6 +577,9 @@ std::string FunctionType::as_str(std::set<const Type *> &seen) const {
   s += get_base_type()->as_str(seen);
 
   return s;
+}
+std::shared_ptr<Type> FunctionType::get_return_type() const {
+    return get_base_type();
 }
 
 bool FunctionType::is_function() const {

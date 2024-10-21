@@ -389,16 +389,21 @@ private:
   // value semantics not allowed
   FunctionType(const FunctionType &);
   FunctionType &operator=(const FunctionType &);
+  
 
 public:
   FunctionType(std::shared_ptr<Type> base_type);
+  FunctionType(std::shared_ptr<Type> return_type, const std::vector<std::shared_ptr<Type>>& param_types);
   virtual ~FunctionType();
 
   virtual bool is_same(const Type *other) const;
+  bool is_same_signature(const FunctionType& other) const;
+
   virtual std::string as_str(std::set<const Type *> &seen) const;
   virtual bool is_function() const;
   virtual unsigned get_storage_size() const;
   virtual unsigned get_alignment() const;
+  std::shared_ptr<Type> get_return_type() const;
 };
 
 //! PointerType represents a pointer type.

@@ -55,6 +55,7 @@ public:
   const std::string &get_name() const;
   std::shared_ptr<Type> get_type() const;
   SymbolTable *get_symtab() const;
+  void set_symtab(SymbolTable *symtab);
 };
 
 class SymbolTable {

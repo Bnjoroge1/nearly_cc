@@ -44,6 +44,11 @@ SymbolKind Symbol::get_kind() const {
 const std::string &Symbol::get_name() const {
   return m_name;
 }
+void Symbol::set_symtab(SymbolTable *symtab) {
+  m_symtab = symtab;
+}
+
+
 
 std::shared_ptr<Type> Symbol::get_type() const {
   return m_type;

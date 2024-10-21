@@ -264,19 +264,204 @@ void SemanticAnalysis::visit_array_declarator(Node *n) {
   }
 }
 void SemanticAnalysis::visit_function_definition(Node *n) {
-  // TODO: implement
+  std::cerr << "Entering visit_function_definition" << std::endl;
+
+  // Extract function name and return type
+  std::string func_name = n->get_kid(1)->get_str();
+  visit(n->get_kid(0));  // Visit return type
+  std::shared_ptr<Type> return_type = n->get_kid(0)->get_type();
+
+  // Check if function already exists in the global symbol table
+  Symbol *existing_sym = m_global_symtab->lookup_local(func_name);
+  SymbolTable *func_symtab = nullptr;
+
+  if (existing_sym) {
+    if (existing_sym->get_kind() != SymbolKind::FUNCTION) {
+      SemanticError::raise(n->get_loc(), ("'" + func_name + "' redefined as different kind of symbol").c_str());
+    }
+    // Function already declared, check if types match
+    std::shared_ptr<FunctionType> existing_type = std::dynamic_pointer_cast<FunctionType>(existing_sym->get_type());
+    if (!existing_type || existing_type->get_return_type() != return_type) {
+      SemanticError::raise(n->get_loc(), ("Conflicting types for '" + func_name + "'").c_str());
+    }
+    // Re-enter the existing function's scope
+    func_symtab = existing_sym->get_symtab();
+  } else {
+    // Create a new symbol table for the function
+    func_symtab = enter_scope("function " + func_name);
+  }
+
+  m_cur_symtab = func_symtab;
+
+  // Process parameter list
+  Node *param_list = n->get_kid(2);
+  std::vector<std::shared_ptr<Type>> param_types;
+  for (Node::const_iterator it = param_list->cbegin(); it != param_list->cend(); ++it) {
+    Node *param_node = *it;
+    visit(param_node);
+    if (!param_node->get_type()) {
+      SemanticError::raise(param_node->get_loc(), "Failed to determine parameter type");
+    }
+    param_types.push_back(param_node->get_type());
+  }
+
+  // Create FunctionType object
+  std::shared_ptr<Type> func_type = std::make_shared<FunctionType>(return_type, param_types);
+
+  if (!existing_sym) {
+    // Add function to global symbol table
+    m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
+  }
+
+  // Set the function type for the current symbol table
+  m_cur_symtab->set_fn_type(func_type);
+
+  // Set the type of the function definition node
+  n->set_type(func_type);
+
+  // Visit function body
+  visit(n->get_kid(3));
+
+  // Return to the previous scope
+  leave_scope();
+
+  std::cerr << "Exiting visit_function_definition" << std::endl;
 }
 
 void SemanticAnalysis::visit_function_declaration(Node *n) {
-  // TODO: implement
+  // Extract function name and return type
+  std::string func_name = n->get_kid(1)->get_str();
+  visit(n->get_kid(0));  // Visit return type
+  std::shared_ptr<Type> return_type = n->get_kid(0)->get_type();
+  std::cerr << "Return type in visit_function_declaration: " << return_type->as_str() << std::endl;
+
+  // Check if function already exists
+  Symbol *existing_sym = m_cur_symtab->lookup_local(func_name);
+  if (existing_sym) {
+    std::cerr << "Function already declared: " << func_name << std::endl;
+    // Function already declared, check if types match
+    std::shared_ptr<FunctionType> existing_type = std::dynamic_pointer_cast<FunctionType>(existing_sym->get_type());
+    if (!existing_type || existing_type->get_return_type() != return_type) {
+      SemanticError::raise(n->get_loc(), ("Conflicting types for '" + func_name + "'").c_str());
+    }
+    // Re-enter the existing function's scope
+    m_cur_symtab = existing_sym->get_symtab();
+  } else {
+    // Create a new symbol table for the function
+    m_cur_symtab = enter_scope("function " + func_name);
+  }
+  std::cerr << "Created new scope for function: " << func_name << std::endl;
+  // Process parameter list
+  Node *param_list = n->get_kid(2);
+  if (!param_list) {
+    SemanticError::raise(n->get_loc(), "Function declaration must have a parameter list");
+  }
+  std::cerr << "Param list in visit_function_declaration: " << param_list->get_num_kids() << std::endl;
+  std::vector<std::shared_ptr<Type>> param_types;
+  for (Node::const_iterator it = param_list->cbegin(); it != param_list->cend(); ++it) {
+    Node *param_node = *it;
+    if (!param_node) {
+      std::cerr << "Warning: Null parameter node found" << std::endl;
+      continue;
+    }
+    std::cerr << "Processing parameter node with tag: " << param_node->get_tag() << std::endl;
+  
+    visit(param_node);
+    if (!param_node->get_type()) {
+      std::cerr << "Warning: Parameter node has no type after visiting" << std::endl;
+      continue;
+    }
+
+    std::shared_ptr<Type> param_type = param_node->get_type();
+    std::cerr << "Parameter type in visit_function_declaration: " << param_type->as_str() << std::endl;
+    // Convert array parameters to pointer types
+    if (auto array_type = std::dynamic_pointer_cast<ArrayType>(param_type)) {
+      param_type = std::make_shared<PointerType>(array_type->get_base_type());
+    }
+    param_types.push_back(param_type);
+  }
+  std::cerr << "Param types in visit_function_declaration: ";
+  // Create or update FunctionType object
+  std::shared_ptr<Type> func_type = std::make_shared<FunctionType>(return_type, param_types);
+
+  if (!existing_sym) {
+    // Add function to global symbol table
+    m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
+  }
+  std::cerr << "Created FunctionType: " << func_type->as_str() << std::endl;
+
+  // Set the type of the function declaration node
+  n->set_type(func_type);
+  std::cerr << "Set type of function declaration node: " << func_type->as_str() << std::endl;
+  // Return to the previous scope
+  leave_scope();
 }
 
 void SemanticAnalysis::visit_function_parameter_list(Node *n) {
-  // TODO: implement
+  std::cerr << "Entering visit_function_parameter_list" << std::endl;
+
+  std::vector<std::shared_ptr<Type>> param_types;
+
+  for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
+    Node *param_node = *it;
+    visit(param_node);  // This will call visit_function_parameter for each parameter
+
+    if (!param_node->get_type()) {
+      SemanticError::raise(param_node->get_loc(), "Failed to determine parameter type");
+    }
+
+    std::shared_ptr<Type> param_type = param_node->get_type();
+    param_types.push_back(param_type);
+
+    std::cerr << "Processed parameter with type: " << param_type->as_str() << std::endl;
+  }
+
+  // Set the parameter types on the parameter list node
+  n->set_type(std::make_shared<FunctionType>(nullptr, param_types));
+
+  std::cerr << "Exiting visit_function_parameter_list" << std::endl;
 }
 
 void SemanticAnalysis::visit_function_parameter(Node *n) {
-  // TODO: implement
+  std::cerr << "Entering visit_function_parameter" << std::endl;
+  
+  // Visit the type node
+  visit(n->get_kid(0));
+  std::shared_ptr<Type> param_type = n->get_kid(0)->get_type();
+  
+  if (!param_type) {
+    SemanticError::raise(n->get_loc(), "Failed to determine parameter type");
+  }
+  
+  // Handle the declarator
+  Node *declarator = n->get_kid(1);
+  std::string param_name;
+  
+  if (declarator->get_tag() == AST_NAMED_DECLARATOR) {
+    param_name = declarator->get_kid(0)->get_str();
+  } else if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+    // Convert array parameter to pointer
+    param_type = std::make_shared<PointerType>(param_type);
+    Node *current = declarator;
+    while (current->get_tag() == AST_ARRAY_DECLARATOR) {
+      current = current->get_kid(0);
+    }
+    if (current->get_tag() == AST_NAMED_DECLARATOR) {
+      param_name = current->get_kid(0)->get_str();
+    }
+  }
+  
+  if (param_name.empty()) {
+    SemanticError::raise(n->get_loc(), "Failed to determine parameter name");
+  }
+  
+  // Add parameter to current symbol table
+  m_cur_symtab->add_entry(n->get_loc(), SymbolKind::VARIABLE, param_name, param_type);
+  
+  // Set the type of the parameter node
+  n->set_type(param_type);
+  
+  std::cerr << "Parameter processed: " << param_name << " with type " << param_type->as_str() << std::endl;
 }
 bool SemanticAnalysis::is_constant_expression(Node *n) {
     switch (n->get_tag()) {
@@ -465,7 +650,24 @@ void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_variable_ref(Node *n) {
-  // TODO: implement
+  std::string var_name = n->get_str();
+  
+  // Look up the variable in the current symbol table and its parents
+  Symbol *sym = m_cur_symtab->lookup_recursive(var_name);
+  
+  if (!sym) {
+    SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
+  }
+  
+  if (sym->get_kind() != SymbolKind::VARIABLE) {
+    SemanticError::raise(n->get_loc(), ("'" + var_name + "' is not a variable").c_str());
+  }
+  
+  // Set the type of the node to the variable's type
+  n->set_type(sym->get_type());
+  
+  // Annotate the node with the symbol
+  n->set_symbol(sym);
 }
 
 void SemanticAnalysis::visit_literal_value(Node *n) {
