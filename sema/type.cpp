@@ -46,6 +46,9 @@ std::string Type::as_str() const {
   std::set<const Type *> seen;
   return as_str(seen);
 }
+bool Type::is_qualified() const {
+    return false;
+}
 
 const Type *Type::get_unqualified_type() const {
   // only QualifiedType will need to override this member function
@@ -300,6 +303,9 @@ BasicTypeKind QualifiedType::get_basic_type_kind() const {
 
 bool QualifiedType::is_signed() const {
   return get_base_type()->is_signed();
+}
+bool QualifiedType::is_qualified() const {
+    return true;
 }
 
 void QualifiedType::add_member(const Member &member) {
@@ -584,6 +590,10 @@ std::shared_ptr<Type> FunctionType::get_return_type() const {
 
 bool FunctionType::is_function() const {
   return true;
+}
+bool FunctionType::is_qualified() const {
+    
+    return false;
 }
 
 unsigned FunctionType::get_storage_size() const {

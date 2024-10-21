@@ -83,6 +83,7 @@ public:
   //! @return pointer to a named `Member` (or a null pointer
   //!         if the named member doesn't exist)
   const Member *find_member(const std::string &name) const;
+  virtual bool is_qualified() const;
 
   // Note that Type provides default implementations of virtual
   // member functions that will be appropriate for most of the
@@ -326,6 +327,8 @@ public:
   virtual unsigned get_array_size() const;
   virtual unsigned get_storage_size() const;
   virtual unsigned get_alignment() const;
+  virtual bool is_qualified() const;
+
 };
 
 //! A BasicType represents a basic type (`int`, `char`, etc.)
@@ -404,6 +407,8 @@ public:
   virtual unsigned get_storage_size() const;
   virtual unsigned get_alignment() const;
   std::shared_ptr<Type> get_return_type() const;
+  virtual bool is_qualified() const;
+
 };
 
 //! PointerType represents a pointer type.

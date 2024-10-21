@@ -516,7 +516,37 @@ int SemanticAnalysis::evaluate_constant_expression(Node *n) {
     return 0; // This line should never be reached
 }
 void SemanticAnalysis::visit_statement_list(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_statement_list" << std::endl;
+
+    // Create a new symbol table for this statement list
+    SymbolTable *statement_scope = enter_scope("statement_list");
+
+    // Iterate through each statement in the list
+    for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
+        Node *stmt = *it;
+        
+        switch (stmt->get_tag()) {
+            case AST_VARIABLE_DECLARATION:
+                visit_variable_declaration(stmt);
+                break;
+            case AST_RETURN_EXPRESSION_STATEMENT:
+                visit_return_expression_statement(stmt);
+                break;
+            case AST_BINARY_EXPRESSION:
+                visit_binary_expression(stmt);
+                break;
+            // Add cases for other statement types as needed
+            default:
+                visit(stmt);  // For any other type of statement
+        }
+    }
+
+
+
+    // Leave the scope after processing all statements
+    leave_scope();
+
+    std::cerr << "Exiting visit_statement_list" << std::endl;
 }
 
 void SemanticAnalysis::visit_return_expression_statement(Node *n) {
@@ -585,7 +615,81 @@ void SemanticAnalysis::visit_return_expression_statement(Node *n) {
 }
 
 void SemanticAnalysis::visit_binary_expression(Node *n) {
-  // TODO: implement
+    Node *left = n->get_kid(0);
+    Node *right = n->get_kid(1);
+    int op = n->get_tag();
+
+    // Visit left and right operands
+    visit(left);
+    visit(right);
+
+    // Get types of left and right operands
+    std::shared_ptr<Type> left_type = left->get_type();
+    std::shared_ptr<Type> right_type = right->get_type();
+
+    if (!left_type || !right_type) {
+        SemanticError::raise(n->get_loc(), "Invalid operand types in binary expression");
+    }
+
+    if (op == TOK_ASSIGN) {
+        // Handle assignment
+        if (!is_lvalue(left)) {
+            SemanticError::raise(left->get_loc(), "Left-hand side of assignment must be an lvalue");
+        }
+
+        if (is_const_qualified(left_type)) {
+            SemanticError::raise(left->get_loc(), "Cannot assign to const-qualified lvalue");
+        }
+
+        if (left_type->is_basic() && right_type->is_basic()) {
+            // Integer assignment
+            n->set_type(left_type);
+        } else if (left_type->is_pointer() && right_type->is_pointer()) {
+            // Pointer assignment
+            if (!are_compatible_pointer_types(left_type, right_type)) {
+                SemanticError::raise(n->get_loc(), "Incompatible pointer types in assignment");
+            }
+            n->set_type(left_type);
+        } else if (left_type->is_struct() && right_type->is_struct()) {
+            // Struct assignment
+            if (!left_type->is_same(right_type.get())) {
+                SemanticError::raise(n->get_loc(), "Incompatible struct types in assignment");
+            }
+            n->set_type(left_type);
+        } else {
+            SemanticError::raise(n->get_loc(), "Incompatible types in assignment");
+        }
+    } else {
+        // Handle other binary operations
+        if (op == TOK_PLUS || op == TOK_MINUS) {
+            if (left_type->is_pointer() && right_type->is_basic()) {
+                // Pointer arithmetic
+                n->set_type(left_type);
+            } else if (left_type->is_basic() && right_type->is_pointer()) {
+                // Pointer arithmetic (reversed operands)
+                n->set_type(right_type);
+            } else if (left_type->is_basic() && right_type->is_basic()) {
+                // Integer arithmetic
+                n->set_type(promote_arithmetic_types(left_type, right_type));
+            } else {
+                SemanticError::raise(n->get_loc(), "Invalid operand types for + or - operator");
+            }
+        } else if (op == TOK_ASTERISK || op == TOK_DIVIDE || op == TOK_MOD) {
+            // Arithmetic operations
+            if (left_type->is_basic() && right_type->is_basic()) {
+                n->set_type(promote_arithmetic_types(left_type, right_type));
+            } else {
+                SemanticError::raise(n->get_loc(), "Invalid operand types for arithmetic operator");
+            }
+        } else {
+            // Other binary operators (comparison, logical, etc.)
+            if (left_type->is_basic() && right_type->is_basic()) {
+                n->set_type(std::make_shared<BasicType>(BasicTypeKind::INT, true));
+            } else {
+                SemanticError::raise(n->get_loc(), "Invalid operand types for binary operator");
+            }
+        }
+    }
 }
 
 void SemanticAnalysis::visit_unary_expression(Node *n) {
@@ -650,10 +754,16 @@ void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_variable_ref(Node *n) {
-  std::string var_name = n->get_str();
+  if (n->get_num_kids() != 1 || n->get_kid(0)->get_tag() != TOK_IDENT) {
+    SemanticError::raise(n->get_loc(), "Invalid variable reference node structure");
+  }
+  std::string var_name = n->get_kid(0)->get_str();
+  std::cerr << "Visiting variable reference: " << var_name << std::endl;
   
   // Look up the variable in the current symbol table and its parents
   Symbol *sym = m_cur_symtab->lookup_recursive(var_name);
+  std::cerr << "Current scope: " << m_cur_symtab->get_name() << std::endl;
+  std::cerr << "Lookup for variable: " << var_name << std::endl;
   
   if (!sym) {
     SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
@@ -711,3 +821,147 @@ void SemanticAnalysis::leave_scope() {
 }
 
 // TODO: implement helper functions
+std::shared_ptr<Type> SemanticAnalysis::promote_arithmetic_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right) {
+    if (!left->is_basic() || !right->is_basic()) {
+        return nullptr;  // Not arithmetic types
+    }
+
+    BasicType* left_basic = dynamic_cast<BasicType*>(left.get());
+    BasicType* right_basic = dynamic_cast<BasicType*>(right.get());
+
+    if (!left_basic || !right_basic) {
+        return nullptr;  // Dynamic cast failed
+    }
+
+    // Promote to int or unsigned int if less precise
+    if (left_basic->get_basic_type_kind() < BasicTypeKind::INT) {
+        left_basic = new BasicType(BasicTypeKind::INT, left_basic->is_signed());
+    }
+    if (right_basic->get_basic_type_kind() < BasicTypeKind::INT) {
+        right_basic = new BasicType(BasicTypeKind::INT, right_basic->is_signed());
+    }
+
+    // Promote to the more precise type
+    // Promote to the more precise type
+    if (left_basic->get_basic_type_kind() > right_basic->get_basic_type_kind()) {
+        return std::make_shared<BasicType>(left_basic->get_basic_type_kind(), left_basic->is_signed());
+    } else if (right_basic->get_basic_type_kind() > left_basic->get_basic_type_kind()) {
+        return std::make_shared<BasicType>(right_basic->get_basic_type_kind(), right_basic->is_signed());
+    }
+
+    // If same precision but different signedness, convert to unsigned
+    if (!left_basic->is_signed() || !right_basic->is_signed()) {
+        return std::make_shared<BasicType>(left_basic->get_basic_type_kind(), false);
+    }
+
+    // Same type, return either
+    return std::make_shared<BasicType>(left_basic->get_basic_type_kind(), left_basic->is_signed());
+}
+
+bool SemanticAnalysis::are_compatible_pointer_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right) {
+    if (!left->is_pointer() || !right->is_pointer()) {
+        return false;
+    }
+
+    PointerType* left_ptr = dynamic_cast<PointerType*>(left.get());
+    PointerType* right_ptr = dynamic_cast<PointerType*>(right.get());
+
+    if (!left_ptr || !right_ptr) {
+        return false;  // Dynamic cast failed
+    }
+
+    std::shared_ptr<Type> left_base = left_ptr->get_base_type();
+    std::shared_ptr<Type> right_base = right_ptr->get_base_type();
+
+    // Check if unqualified base types are identical
+    if (!left_base->get_unqualified_type()->is_same(right_base->get_unqualified_type())) {
+        return false;
+    }
+
+    // Check if left base type doesn't lack any qualifiers that right base type has
+    if (right_base->is_const() && !left_base->is_const()) {
+        return false;
+    }
+    if (right_base->is_volatile() && !left_base->is_volatile()) {
+        return false;
+    }
+
+    return true;
+}
+
+bool SemanticAnalysis::is_const_qualified(std::shared_ptr<Type> type) {
+    if (type->is_qualified()) {
+        QualifiedType* qual_type = dynamic_cast<QualifiedType*>(type.get());
+        if (qual_type) {
+            return qual_type->is_const();
+        }
+    }
+    return false;
+}
+bool SemanticAnalysis::is_lvalue(Node *n) {
+    switch (n->get_tag()) {
+        case AST_VARIABLE_REF:
+            // Variable reference is always an lvalue
+            return true;
+        case AST_ARRAY_ELEMENT_REF_EXPRESSION:
+            // Array element reference is an lvalue
+            return true;
+        case AST_UNARY_EXPRESSION:
+            // Pointer dereference is an lvalue
+            return n->get_kid(0)->get_tag() == TOK_ASTERISK;
+        case AST_FIELD_REF_EXPRESSION:
+        case AST_INDIRECT_FIELD_REF_EXPRESSION:
+            // Struct field reference is an lvalue
+            return true;
+        default:
+            return false;
+    }
+}
+void SemanticAnalysis::visit_assignment_expression(Node *n) {
+    std::cerr << "Entering visit_assignment_expression" << std::endl;
+
+    // Visit left-hand side (lvalue)
+    Node *lhs = n->get_kid(0);
+    visit(lhs);
+
+    // Visit right-hand side (rvalue)
+    Node *rhs = n->get_kid(1);
+    visit(rhs);
+
+    std::shared_ptr<Type> lhs_type = lhs->get_type();
+    std::shared_ptr<Type> rhs_type = rhs->get_type();
+
+    if (!lhs_type || !rhs_type) {
+        SemanticError::raise(n->get_loc(), "Invalid types in assignment");
+    }
+
+    // Check if lhs is an lvalue
+    if (!is_lvalue(lhs)) {
+        SemanticError::raise(lhs->get_loc(), "Left-hand side of assignment must be an lvalue");
+    }
+
+    // Check for const assignment
+    if (is_const_qualified(lhs_type)) {
+        SemanticError::raise(lhs->get_loc(), "Cannot assign to const-qualified lvalue");
+    }
+
+    // Check type compatibility and perform implicit conversions if necessary
+    if (lhs_type->is_basic() && rhs_type->is_basic()) {
+        // Implicit conversion for basic types
+        n->set_type(lhs_type);
+    } else if (lhs_type->is_pointer() && rhs_type->is_pointer()) {
+        if (!are_compatible_pointer_types(lhs_type, rhs_type)) {
+            SemanticError::raise(n->get_loc(), "Incompatible pointer types in assignment");
+        }
+        n->set_type(lhs_type);
+    } else if (lhs_type->is_struct() && rhs_type->is_struct()) {
+        if (!lhs_type->is_same(rhs_type.get())) {
+            SemanticError::raise(n->get_loc(), "Incompatible struct types in assignment");
+        }
+        n->set_type(lhs_type);
+    } else {
+        SemanticError::raise(n->get_loc(), "Incompatible types in assignment");
+    }
+
+    std::cerr << "Exiting visit_assignment_expression" << std::endl;
+}

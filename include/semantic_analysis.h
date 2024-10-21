@@ -74,7 +74,7 @@ public:
   virtual void visit_array_element_ref_expression(Node *n);
   virtual void visit_variable_ref(Node *n);
   virtual void visit_literal_value(Node *n);
-
+  virtual void visit_assignment_expression(Node *n);
 private:
   bool is_constant_expression(Node *n);
   int evaluate_constant_expression(Node *n);
@@ -85,6 +85,12 @@ private:
 
   //! Return to the parent of the current scope.
   void leave_scope();
+  std::shared_ptr<Type> promote_arithmetic_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right);
+  bool are_compatible_pointer_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right);
+  bool is_const_qualified(std::shared_ptr<Type> type);
+  bool is_lvalue(Node *n);
+
+
 
   // TODO: add helper functions
 };
