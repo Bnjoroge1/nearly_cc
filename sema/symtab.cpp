@@ -22,6 +22,7 @@
 #include <cstdio>
 #include "exceptions.h"
 #include "symtab.h"
+#include <iostream>
 
 ////////////////////////////////////////////////////////////////////////
 // Symbol implementation
@@ -120,14 +121,18 @@ unsigned SymbolTable::get_num_parameters() const {
 
 Symbol *SymbolTable::lookup_recursive(const std::string &name) const {
   const SymbolTable *scope = this;
+  std::cerr << "Lookup recursive for: " << name << std::endl;
 
   while (scope != nullptr) {
     Symbol *sym = scope->lookup_local(name);
-    if (sym != nullptr)
+    if (sym != nullptr) {
+      std::cerr << "Found in scope: " << scope->get_name() << std::endl;
       return sym;
+    }
+    std::cerr << "Not found in scope: " << scope->get_name() << std::endl;
     scope = scope->get_parent();
   }
-
+  std::cerr << "Not found" << std::endl;
   return nullptr;
 }
 

@@ -114,6 +114,10 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
 
     // Create a symbol for the variable
     Symbol *sym = new Symbol(SymbolKind::VARIABLE, var_name, full_type, m_cur_symtab);
+    if (!sym) {
+      SemanticError::raise(declarator->get_loc(), "Failed to create symbol for variable");
+    }
+    std::cerr << "Created symbol for variable: " << var_name << std::endl;
 
     // Add the symbol to the current symbol table
     m_cur_symtab->add_entry(declarator->get_loc(), SymbolKind::VARIABLE, var_name, full_type);
@@ -518,8 +522,7 @@ int SemanticAnalysis::evaluate_constant_expression(Node *n) {
 void SemanticAnalysis::visit_statement_list(Node *n) {
     std::cerr << "Entering visit_statement_list" << std::endl;
 
-    // Create a new symbol table for this statement list
-    SymbolTable *statement_scope = enter_scope("statement_list");
+    
 
     // Iterate through each statement in the list
     for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
@@ -544,7 +547,6 @@ void SemanticAnalysis::visit_statement_list(Node *n) {
 
 
     // Leave the scope after processing all statements
-    leave_scope();
 
     std::cerr << "Exiting visit_statement_list" << std::endl;
 }
@@ -615,21 +617,43 @@ void SemanticAnalysis::visit_return_expression_statement(Node *n) {
 }
 
 void SemanticAnalysis::visit_binary_expression(Node *n) {
-    Node *left = n->get_kid(0);
-    Node *right = n->get_kid(1);
-    int op = n->get_tag();
+    Node *op_node = n->get_kid(0);
+  Node *left = n->get_kid(1);
+    Node *right = n->get_kid(2);
+    int op = op_node->get_tag();
+
+    std::cerr << "visiting left: " << left->get_tag() << std::endl;
+    std::cerr << "visiting right: " << right->get_tag() << std::endl;
+    std::cerr << "Operator: " << op << std::endl;
 
     // Visit left and right operands
-    visit(left);
-    visit(right);
+    if (left->get_tag() == AST_VARIABLE_REF) {
+        std::cerr << "Explicitly calling visit_variable_ref for left operand" << std::endl;
+        visit_variable_ref(left);
+    } else {
+        visit(left);
+    }
 
+    if (right->get_tag() == AST_VARIABLE_REF) {
+        std::cerr << "Explicitly calling visit_variable_ref for right operand" << std::endl;
+        visit_variable_ref(right);
+    } else {
+        visit(right);
+    }
     // Get types of left and right operands
     std::shared_ptr<Type> left_type = left->get_type();
     std::shared_ptr<Type> right_type = right->get_type();
-
+    if (!left_type) {
+        std::cerr << "Left type is null" << std::endl;
+        SemanticError::raise(left->get_loc(), "Left operand has no type");
+    }
+    if (right_type) {
+      std::cerr << "Right type: " << right_type->as_str() << std::endl;
+    }
     if (!left_type || !right_type) {
         SemanticError::raise(n->get_loc(), "Invalid operand types in binary expression");
     }
+   
 
     if (op == TOK_ASSIGN) {
         // Handle assignment
@@ -754,58 +778,81 @@ void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_variable_ref(Node *n) {
-  if (n->get_num_kids() != 1 || n->get_kid(0)->get_tag() != TOK_IDENT) {
-    SemanticError::raise(n->get_loc(), "Invalid variable reference node structure");
-  }
-  std::string var_name = n->get_kid(0)->get_str();
-  std::cerr << "Visiting variable reference: " << var_name << std::endl;
+    std::cerr << "Visiting variable reference" << std::endl;
+
+    if (n->get_num_kids() != 1 || n->get_kid(0)->get_tag() != TOK_IDENT) {
+        SemanticError::raise(n->get_loc(), "Invalid variable reference node structure");
+    }
+    std::string var_name = n->get_kid(0)->get_str();
+    std::cerr << "Visiting variable reference: " << var_name << std::endl;
   
-  // Look up the variable in the current symbol table and its parents
-  Symbol *sym = m_cur_symtab->lookup_recursive(var_name);
-  std::cerr << "Current scope: " << m_cur_symtab->get_name() << std::endl;
-  std::cerr << "Lookup for variable: " << var_name << std::endl;
+    // Look up the variable in the current symbol table and its parents
+    Symbol *sym = m_cur_symtab->lookup_recursive(var_name);
+    std::cerr << "Current scope: " << m_cur_symtab->get_name() << std::endl;
+    std::cerr << "Lookup for variable: " << var_name << std::endl;
   
-  if (!sym) {
-    SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
-  }
+    if (!sym) {
+        SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
+    }
   
-  if (sym->get_kind() != SymbolKind::VARIABLE) {
-    SemanticError::raise(n->get_loc(), ("'" + var_name + "' is not a variable").c_str());
-  }
+    if (sym->get_kind() != SymbolKind::VARIABLE) {
+        SemanticError::raise(n->get_loc(), ("'" + var_name + "' is not a variable").c_str());
+    }
   
-  // Set the type of the node to the variable's type
-  n->set_type(sym->get_type());
+    // Check if the symbol has a valid type before setting it
+    std::shared_ptr<Type> var_type = sym->get_type();
+    if (!var_type) {
+        SemanticError::raise(n->get_loc(), ("Variable '" + var_name + "' has no type information").c_str());
+    }
+    std::cerr << "Variable type: " << var_type->as_str() << std::endl;
   
-  // Annotate the node with the symbol
-  n->set_symbol(sym);
+    // Set the type of the node to the variable's type
+    n->set_type(var_type);
+  
+    // Annotate the node with the symbol
+    n->set_symbol(sym);
+
+    std::cerr << "Variable reference processed: " << var_name << " with type " << var_type->as_str() << std::endl;
 }
 
 void SemanticAnalysis::visit_literal_value(Node *n) {
-  std::string literal_str = n->get_str();
-  std::shared_ptr<Type> literal_type;
+  std::cerr << "Visiting literal value node" << std::endl;
+  
+  // Check if the node has children
+  if (n->get_num_kids() > 0) {
+    Node *literal_child = n->get_kid(0);
+    std::string literal_str = literal_child->get_str();
+    std::shared_ptr<Type> literal_type;
 
-  switch (n->get_tag()) {
-    case TOK_INT_LIT:
-      literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
-      break;
-    case TOK_CHAR_LIT:
-      literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
-      break;
-    case TOK_FP_LIT:
-      // For now, treat floating-point literals as long
-      literal_type = std::make_shared<BasicType>(BasicTypeKind::LONG, true);
-      break;
-    case TOK_STR_LIT:
-      literal_type = std::make_shared<ArrayType>(
-        std::make_shared<BasicType>(BasicTypeKind::CHAR, true),
-        literal_str.length() + 1  // +1 for null terminator
-      );
-      break;
-    default:
-      SemanticError::raise(n->get_loc(), "Unknown literal type");
+    std::cerr << "Literal child tag: " << literal_child->get_tag() << std::endl;
+    std::cerr << "Literal value: " << literal_str << std::endl;
+
+    switch (literal_child->get_tag()) {
+      case TOK_INT_LIT:
+        std::cerr << "Processing integer literal: " << literal_str << std::endl;
+        literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
+        std::cerr << " Created literal type: " << literal_type->as_str() << std::endl;
+        break;
+      case TOK_CHAR_LIT:
+        literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
+        break;
+      case TOK_DOUBLE:
+        literal_type = std::make_shared<BasicType>(BasicTypeKind::SHORT, true);
+        break;
+      case TOK_STR_LIT:
+        literal_type = std::make_shared<ArrayType>(
+          std::make_shared<BasicType>(BasicTypeKind::CHAR, true),
+          literal_str.length() + 1  // +1 for null terminator
+        );
+        break;
+      default:
+        SemanticError::raise(n->get_loc(), "Unknown literal type");
+    }
+
+    n->set_type(literal_type);
+  } else {
+    SemanticError::raise(n->get_loc(), "Literal value node has no children");
   }
-
-  n->set_type(literal_type);
 }
 
 SymbolTable *SemanticAnalysis::enter_scope(const std::string &name) {

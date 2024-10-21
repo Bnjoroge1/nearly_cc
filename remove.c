@@ -1,6 +1,7 @@
+int x;
 
 int main() {
- int x;
-    x = 1;
+    int y;
+    y = 1;
     return 0;
 }
