@@ -465,45 +465,50 @@ void SemanticAnalysis::visit_function_parameter_list(Node *n) {
 }
 
 void SemanticAnalysis::visit_function_parameter(Node *n) {
-  std::cerr << "Entering visit_function_parameter" << std::endl;
-  
-  // Visit the type node
-  visit(n->get_kid(0));
-  std::shared_ptr<Type> param_type = n->get_kid(0)->get_type();
-  
-  if (!param_type) {
-    SemanticError::raise(n->get_loc(), "Failed to determine parameter type");
-  }
-  
-  // Handle the declarator
-  Node *declarator = n->get_kid(1);
-  std::string param_name;
-  
-  if (declarator->get_tag() == AST_NAMED_DECLARATOR) {
-    param_name = declarator->get_kid(0)->get_str();
-  } else if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
-    // Convert array parameter to pointer
-    param_type = std::make_shared<PointerType>(param_type);
+    std::cerr << "Entering visit_function_parameter" << std::endl;
+    
+    // Visit the type node
+    visit(n->get_kid(0));
+    std::shared_ptr<Type> param_type = n->get_kid(0)->get_type();
+    
+    if (!param_type) {
+        SemanticError::raise(n->get_loc(), "Failed to determine parameter type");
+    }
+    
+    // Handle the declarator
+    Node *declarator = n->get_kid(1);
+    std::string param_name;
+    
+    // Find the named declarator and build the type
     Node *current = declarator;
-    while (current->get_tag() == AST_ARRAY_DECLARATOR) {
-      current = current->get_kid(0);
+    while (current->get_tag() != AST_NAMED_DECLARATOR) {
+        if (current->get_tag() == AST_POINTER_DECLARATOR) {
+            // Create pointer type
+            param_type = std::make_shared<PointerType>(param_type);
+            current = current->get_kid(0);
+        } else if (current->get_tag() == AST_ARRAY_DECLARATOR) {
+            // Convert array parameter to pointer
+            param_type = std::make_shared<PointerType>(param_type);
+            current = current->get_kid(0);
+        } else {
+            SemanticError::raise(n->get_loc(), "Unexpected declarator type");
+        }
     }
-    if (current->get_tag() == AST_NAMED_DECLARATOR) {
-      param_name = current->get_kid(0)->get_str();
+    
+    // Get name from the named declarator
+    param_name = current->get_kid(0)->get_str();
+    
+    if (param_name.empty()) {
+        SemanticError::raise(n->get_loc(), "Failed to determine parameter name");
     }
-  }
-  
-  if (param_name.empty()) {
-    SemanticError::raise(n->get_loc(), "Failed to determine parameter name");
-  }
-  
-  // Add parameter to current symbol table
-  m_cur_symtab->add_entry(n->get_loc(), SymbolKind::VARIABLE, param_name, param_type);
-  
-  // Set the type of the parameter node
-  n->set_type(param_type);
-  
-  std::cerr << "Parameter processed: " << param_name << " with type " << param_type->as_str() << std::endl;
+    
+    // Add parameter to current symbol table
+    m_cur_symtab->add_entry(n->get_loc(), SymbolKind::VARIABLE, param_name, param_type);
+    
+    // Set the type of the parameter node
+    n->set_type(param_type);
+    
+    std::cerr << "Parameter processed: " << param_name << " with type " << param_type->as_str() << std::endl;
 }
 bool SemanticAnalysis::is_constant_expression(Node *n) {
     switch (n->get_tag()) {
