@@ -138,6 +138,9 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
       case TOK_UNSIGNED:
         is_unsigned = true;
         break;
+      case TOK_SIGNED:
+        is_unsigned = false;
+        break;
       case TOK_CONST:
         is_const = true;
         break;
@@ -972,7 +975,36 @@ void SemanticAnalysis::visit_field_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_indirect_field_ref_expression" << std::endl;
+
+    // Visit the left-hand side (pointer to struct expression)
+    Node *lhs = n->get_kid(0);
+    visit(lhs);
+
+    std::shared_ptr<Type> lhs_type = lhs->get_type();
+    if (!lhs_type || !lhs_type->is_pointer()) {
+        SemanticError::raise(n->get_loc(), "Left-hand side of '->' is not a pointer");
+    }
+
+    // Get the base type (should be a struct)
+    std::shared_ptr<Type> base_type = std::dynamic_pointer_cast<PointerType>(lhs_type)->get_base_type();
+    if (!base_type->is_struct()) {
+        SemanticError::raise(n->get_loc(), "Left-hand side of '->' is not a pointer to a struct");
+    }
+
+    // Get the field name
+    std::string field_name = n->get_kid(1)->get_str();
+
+    // Look up the field in the struct type
+    const Member *member = base_type->find_member(field_name);
+    if (!member) {
+        SemanticError::raise(n->get_loc(), ("Struct has no member named '" + field_name + "'").c_str());
+    }
+
+    // Set the type of the field reference expression
+    n->set_type(member->get_type());
+
+    std::cerr << "Exiting visit_indirect_field_ref_expression" << std::endl;
 }
 
 void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
