@@ -665,6 +665,15 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
             return true;
         }
     }
+    // Handle array-to-pointer conversion for function parameters
+    if (target->is_pointer() && source->is_array()) {
+        // Get base types of both pointer and array
+        std::shared_ptr<Type> pointer_base = target->get_base_type();
+        std::shared_ptr<Type> array_base = source->get_base_type();
+        
+        // Check if base types are compatible
+        return pointer_base->is_same(array_base.get());
+    }
     
     // Add more rules for pointer types, struct types, etc. as needed
     
