@@ -238,12 +238,13 @@ void SemanticAnalysis::visit_named_declarator(Node *n) {
 
 void SemanticAnalysis::visit_pointer_declarator(Node *n) {
     std::cerr << "Entering visit_pointer_declarator" << std::endl;
+    // Create a pointer type based on the current variable type
+    m_var_type = std::make_shared<PointerType>(m_var_type);
 
     // Visit the base declarator 
     visit(n->get_kid(0));
 
-    // Create a pointer type based on the current variable type
-    m_var_type = std::make_shared<PointerType>(m_var_type);
+    
 
     std::cerr << "Created pointer type: " << m_var_type->as_str() << std::endl;
     n->set_str(n->get_kid(0)->get_str());
