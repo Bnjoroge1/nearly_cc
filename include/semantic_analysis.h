@@ -89,7 +89,9 @@ private:
   bool are_compatible_pointer_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right);
   bool is_const_qualified(std::shared_ptr<Type> type);
   bool is_lvalue(Node *n);
-
+  Node *create_implicit_conversion(Node *n, std::shared_ptr<Type> target_type);
+  bool is_assignable(std::shared_ptr<Type> target, std::shared_ptr<Type> source);
+  
 
 
   // TODO: add helper functions

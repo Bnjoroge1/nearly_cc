@@ -552,7 +552,86 @@ void SemanticAnalysis::visit_statement_list(Node *n) {
 }
 
 void SemanticAnalysis::visit_return_expression_statement(Node *n) {
-  // TODO: implement
+    // Get the current function's return type from the symbol table
+    std::shared_ptr<Type> function_return_type = m_cur_symtab->get_fn_type();
+    if (!function_return_type) {
+        SemanticError::raise(n->get_loc(), "Return statement outside of function");
+    }
+
+    // Get the actual return type (base type of the function type)
+    function_return_type = function_return_type->get_base_type();
+    
+    // Get the return expression (if any)
+    Node *expr = n->get_kid(0);
+    std::shared_ptr<Type> expr_type;
+
+    if (expr) {
+        visit(expr);
+        expr_type = expr->get_type();
+        if (!expr_type) {
+            SemanticError::raise(expr->get_loc(), "Return expression has no type");
+        }
+    }
+    std::cerr << "expr_type: " << expr_type->as_str() << std::endl;
+    std::cerr << "function_return_type: " << function_return_type->as_str() << std::endl;
+
+    // Type checking
+    if (function_return_type->is_void()) {
+        if (expr) {
+            SemanticError::raise(n->get_loc(), "Void function cannot return a value");
+        }
+    } else {
+        if (!expr) {
+            SemanticError::raise(n->get_loc(), "Non-void function must return a value");
+        } else {
+
+            // Check if the expression type is compatible with the function return type
+            if (!is_assignable(expr_type, function_return_type)) {
+                SemanticError::raise(n->get_loc(), "Incompatible return type");
+            }
+            
+            // Handle implicit conversions if necessary
+            if (!function_return_type->is_same(expr_type.get())) {
+                Node *conversion = create_implicit_conversion(expr, function_return_type);
+                n->set_kid(0, conversion);
+            }
+        }
+    }
+
+    // Set the type of the return statement node
+    n->set_type(function_return_type);
+}
+// Helper function to create implicit conversion node
+Node *SemanticAnalysis::create_implicit_conversion(Node *n, std::shared_ptr<Type> target_type) {
+    std::unique_ptr<Node> conversion(new Node(AST_IMPLICIT_CONVERSION, {n}));
+    conversion->set_type(target_type);
+    return conversion.release();
+}
+
+// Helper function to check if one type can be assigned to another
+bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_ptr<Type> source) {
+    if (target->is_same(source.get())) {
+        return true;
+    }
+    
+    if (target->is_basic() && source->is_basic()) {
+        BasicTypeKind target_kind = target->get_basic_type_kind();
+        BasicTypeKind source_kind = source->get_basic_type_kind();
+        
+        // Allow implicit conversion to more precise types
+        if (target_kind >= source_kind) {
+            return true;
+        }
+        
+        // Allow conversion from signed to unsigned of same or greater precision
+        if (!target->is_signed() && source->is_signed() && target_kind >= source_kind) {
+            return true;
+        }
+    }
+    
+    // Add more rules for pointer types, struct types, etc. as needed
+    
+    return false;
 }
 
  void SemanticAnalysis::visit_struct_type_definition(Node *n) {
@@ -618,7 +697,7 @@ void SemanticAnalysis::visit_return_expression_statement(Node *n) {
 
 void SemanticAnalysis::visit_binary_expression(Node *n) {
     Node *op_node = n->get_kid(0);
-  Node *left = n->get_kid(1);
+    Node *left = n->get_kid(1);
     Node *right = n->get_kid(2);
     int op = op_node->get_tag();
 
@@ -717,8 +796,82 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_unary_expression(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_unary_expression" << std::endl;
+
+    // Get the operator and operand
+    Node *op_node = n->get_kid(0);
+    Node *operand = n->get_kid(1);
+    int op = op_node->get_tag();
+
+    std::cerr << "Unary operator: " << op << std::endl;
+
+    // Visit the operand
+    visit(operand);
+
+    // Get the type of the operand
+    std::shared_ptr<Type> operand_type = operand->get_type();
+
+    if (!operand_type) {
+        SemanticError::raise(operand->get_loc(), "Operand has no type");
+    }
+
+    std::cerr << "Operand type: " << operand_type->as_str() << std::endl;
+
+    // Handle different unary operators
+    switch (op) {
+        case TOK_MINUS:
+        case TOK_PLUS:
+            // Arithmetic unary operators
+            if (operand_type->is_basic() && !operand_type->is_void()) {
+                // Promote operand to int if it's less precise
+                if (operand_type->get_basic_type_kind() < BasicTypeKind::INT) {
+                    std::shared_ptr<Type> promoted_type = std::make_shared<BasicType>(BasicTypeKind::INT, operand_type->is_signed());
+                    n->set_kid(1, create_implicit_conversion(operand, promoted_type));
+                    operand_type = promoted_type;
+                }
+                n->set_type(operand_type);
+            } else {
+                SemanticError::raise(n->get_loc(), "Invalid operand type for unary arithmetic operator");
+            }
+            break;
+
+        case TOK_NOT:
+            // Logical not operator
+            if (operand_type->is_basic() && !operand_type->is_void()) {
+                // Result is always int (boolean)
+                n->set_type(std::make_shared<BasicType>(BasicTypeKind::INT, true));
+            } else {
+                SemanticError::raise(n->get_loc(), "Invalid operand type for logical not operator");
+            }
+            break;
+
+        case TOK_ASTERISK:
+            // Pointer dereference
+            if (operand_type->is_pointer()) {
+                n->set_type(operand_type->get_base_type());
+            } else {
+                SemanticError::raise(n->get_loc(), "Cannot dereference non-pointer type");
+            }
+            break;
+
+        case TOK_AMPERSAND:
+            // Address-of operator
+            if (is_lvalue(operand)) {
+                n->set_type(std::make_shared<PointerType>(operand_type));
+            } else {
+                SemanticError::raise(n->get_loc(), "Cannot take address of non-lvalue");
+            }
+            break;
+
+        default:
+            SemanticError::raise(n->get_loc(), "Unknown unary operator");
+    }
+
+    std::cerr << "Unary expression type: " << n->get_type()->as_str() << std::endl;
+    std::cerr << "Exiting visit_unary_expression" << std::endl;
 }
+
+
 
 void SemanticAnalysis::visit_postfix_expression(Node *n) {
   // TODO: implement
@@ -733,11 +886,89 @@ void SemanticAnalysis::visit_cast_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_function_call_expression(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_function_call_expression" << std::endl;
+
+    // Visit the function name (should be a variable reference)
+    Node *func_ref = n->get_kid(0);
+    visit(func_ref);
+
+    // Get the symbol and type from the function reference node
+    Symbol *func_sym = func_ref->get_symbol();
+    if (!func_sym) {
+        SemanticError::raise(func_ref->get_loc(), "Function not found");
+    }
+
+    std::shared_ptr<Type> func_type = func_sym->get_type();
+    if (!func_type || !func_type->is_function()) {
+        SemanticError::raise(func_ref->get_loc(), "Called object is not a function");
+    }
+
+    // Get the argument list
+    Node *arg_list = n->get_kid(1);
+
+    // Check number of arguments
+    if (arg_list->get_num_kids() != func_type->get_num_members()) {
+        SemanticError::raise(n->get_loc(), "Incorrect number of arguments");
+    }
+
+    // Check type compatibility for each argument
+    for (unsigned i = 0; i < arg_list->get_num_kids(); ++i) {
+        Node *arg = arg_list->get_kid(i);
+        visit(arg);
+        
+        const Member& param = func_type->get_member(i);
+        std::shared_ptr<Type> param_type = param.get_type();
+        std::shared_ptr<Type> arg_type = arg->get_type();
+
+        if (!arg_type) {
+            SemanticError::raise(arg->get_loc(), "Argument has no type");
+        }
+        std::cerr << "param_type: " << param_type->as_str() << std::endl;
+        std::cerr << "arg_type: " << arg_type->as_str() << std::endl;
+
+        if (!is_assignable(param_type, arg_type)) {
+            SemanticError::raise(arg->get_loc(), 
+                ("Incompatible argument type for parameter " + std::to_string(i + 1)).c_str());
+        }
+
+        // Handle implicit conversions if necessary
+        if (!param_type->is_same(arg_type.get())) {
+            Node *conversion = create_implicit_conversion(arg, param_type);
+            arg_list->set_kid(i, conversion);
+        }
+    }
+
+    // Set the type of the function call expression to the return type of the function
+    n->set_type(func_type->get_base_type());
+
+    std::cerr << "Exiting visit_function_call_expression" << std::endl;
 }
 
 void SemanticAnalysis::visit_field_ref_expression(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_field_ref_expression" << std::endl;
+
+    // Visit the left-hand side (struct expression)
+    Node *lhs = n->get_kid(0);
+    visit(lhs);
+
+    std::shared_ptr<Type> lhs_type = lhs->get_type();
+    if (!lhs_type || !lhs_type->is_struct()) {
+        SemanticError::raise(n->get_loc(), "Left-hand side of '.' is not a struct");
+    }
+
+    // Get the field name
+    std::string field_name = n->get_kid(1)->get_str();
+
+    // Look up the field in the struct type
+    const Member *member = lhs_type->find_member(field_name);
+    if (!member) {
+        SemanticError::raise(n->get_loc(), ("Struct has no member named '" + field_name + "'").c_str());
+    }
+
+    // Set the type of the field reference expression
+    n->set_type(member->get_type());
+
+    std::cerr << "Exiting visit_field_ref_expression" << std::endl;
 }
 
 void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
@@ -794,11 +1025,11 @@ void SemanticAnalysis::visit_variable_ref(Node *n) {
     if (!sym) {
         SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
     }
-  
-    if (sym->get_kind() != SymbolKind::VARIABLE) {
-        SemanticError::raise(n->get_loc(), ("'" + var_name + "' is not a variable").c_str());
+    std::cerr << "sym kind: " << static_cast<int>(sym->get_kind()) << std::endl;
+    // Handle both variables and functions
+    if (sym->get_kind() != SymbolKind::VARIABLE && sym->get_kind() != SymbolKind::FUNCTION) {
+        SemanticError::raise(n->get_loc(), ("'" + var_name + "' is neither a variable nor a function").c_str());
     }
-  
     // Check if the symbol has a valid type before setting it
     std::shared_ptr<Type> var_type = sym->get_type();
     if (!var_type) {
