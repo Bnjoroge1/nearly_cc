@@ -235,14 +235,32 @@ void SemanticAnalysis::visit_named_declarator(Node *n) {
 }
 
 void SemanticAnalysis::visit_pointer_declarator(Node *n) {
-  // TODO: implement
-}
+    std::cerr << "Entering visit_pointer_declarator" << std::endl;
 
+    // Visit the base declarator 
+    visit(n->get_kid(0));
+
+    // Create a pointer type based on the current variable type
+    m_var_type = std::make_shared<PointerType>(m_var_type);
+
+    std::cerr << "Created pointer type: " << m_var_type->as_str() << std::endl;
+    n->set_str(n->get_kid(0)->get_str());
+
+
+    // Set the type of this node
+    n->set_type(m_var_type);
+    std::cerr << "Created pointer type: " << m_var_type->as_str() << std::endl;
+    std::cerr << "Variable name: " << n->get_str() << std::endl;
+
+    std::cerr << "Exiting visit_pointer_declarator" << std::endl;
+}
 void SemanticAnalysis::visit_array_declarator(Node *n) {
+  std::cerr << "Entering visit_array_declarator" << std::endl;
   std::shared_ptr<Type> base_type = m_var_type;
   Node *size_expr = n->get_kid(1);
   int array_size = -1;
 
+  // Process the size expression
   if (size_expr) {
     visit(size_expr);
     std::cerr << "Size expression tag: " << size_expr->get_tag() << std::endl;
@@ -261,26 +279,29 @@ void SemanticAnalysis::visit_array_declarator(Node *n) {
     }
   }
 
+  // Create the array type
   std::shared_ptr<Type> array_type = std::make_shared<ArrayType>(base_type, array_size);
   
-  // Handle nested arrays
-  if (n->get_kid(0)->get_tag() == AST_ARRAY_DECLARATOR) {
-    visit(n->get_kid(0));
-    array_type = std::make_shared<ArrayType>(array_type, array_size);
-  }else if (n->get_kid(0)->get_tag() == TOK_IDENT) {
-    // Set the variable name when we reach the identifier
-    n->set_str(n->get_kid(0)->get_str());
+  // Process the child declarator
+  Node *child = n->get_kid(0);
+  if (child->get_tag() == AST_ARRAY_DECLARATOR || child->get_tag() == AST_POINTER_DECLARATOR) {
+    visit(child);
+    // The child visit should have set the variable name, so we can just copy it
+    n->set_str(child->get_str());
+  } else if (child->get_tag() == AST_NAMED_DECLARATOR) {
+    visit(child);
+    // For named declarator, we need to get the name from its child
+    n->set_str(child->get_kid(0)->get_str());
+  } else if (child->get_tag() == TOK_IDENT) {
+    // Direct identifier, just set the name
+    n->set_str(child->get_str());
   }
 
+  // Set the type for this node
   m_var_type = array_type;
   n->set_type(array_type);
 
-  // Set the variable name
-  if (n->get_kid(0)->get_tag() == TOK_IDENT) {
-    n->set_str(n->get_kid(0)->get_str());
-  } else if (n->get_kid(0)->get_tag() == AST_ARRAY_DECLARATOR) {
-    n->set_str(n->get_kid(0)->get_str());
-  }
+  std::cerr << "Array declarator processed. Name: " << n->get_str() << ", Type: " << array_type->as_str() << std::endl;
 }
 void SemanticAnalysis::visit_function_definition(Node *n) {
   std::cerr << "Entering visit_function_definition" << std::endl;
@@ -777,7 +798,8 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
         } else {
             SemanticError::raise(n->get_loc(), "Incompatible types in assignment");
         }
-    } else {
+    } 
+    else {
         // Handle other binary operations
         if (op == TOK_PLUS || op == TOK_MINUS) {
             if (left_type->is_pointer() && right_type->is_basic()) {

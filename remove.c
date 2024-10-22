@@ -1,11 +1,13 @@
+struct Foo {
+  int x;
+};
+
 int main(void) {
-  char c1;
-  signed char c2;
-  unsigned char c3;
+  struct Foo f1;
+  struct Foo f2;
 
-  c1 = -2;
-  c2 = -3;
-  c3 = 128;
-
+  int *o;
+  
+  
   return 0;
 }
