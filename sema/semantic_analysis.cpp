@@ -585,7 +585,6 @@ void SemanticAnalysis::visit_statement_list(Node *n) {
 
 
     // Leave the scope after processing all statements
-
     std::cerr << "Exiting visit_statement_list" << std::endl;
 }
 
@@ -686,52 +685,56 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
 
   // Add the struct type to the current symbol table
   m_cur_symtab->add_entry(loc, SymbolKind::TYPE, "struct " + name, struct_type);
+  SymbolTable* prev_scope = m_cur_symtab;
   std::cerr << "Added struct type to symbol table: struct " << name << std::endl;
 
-  // Create a new scope for the struct members
-  SymbolTable *struct_scope = enter_scope("struct " + name);
-  std::cerr << "Entered new scope for struct members" << std::endl;
+ // Create a new scope for the struct members
+SymbolTable *struct_scope = enter_scope("struct " + name);
+std::cerr << "Entered new scope for struct members" << std::endl;
 
-  // Process the struct members
-  Node *member_list = n->get_kid(1);
-  std::cerr << "Number of struct members: " << member_list->get_num_kids() << std::endl;
-  
-  for (Node::const_iterator it = member_list->cbegin(); it != member_list->cend(); ++it) {
+// Process the struct members
+Node *member_list = n->get_kid(1);
+std::cerr << "Number of struct members: " << member_list->get_num_kids() << std::endl;
+
+for (Node::const_iterator it = member_list->cbegin(); it != member_list->cend(); ++it) {
     Node *member_node = *it;
     std::cerr << "Processing member node" << std::endl;
     visit(member_node);
     
-    // After visiting the member, we should have its name and type
-    std::string member_name = member_node->get_kid(2)->get_kid(0)->get_str();
-    std::shared_ptr<Type> member_type = member_node->get_kid(1)->get_type();
-    if (member_type) {
-        std::cerr << "Member name: " << member_name << ", Member type: " << member_type->as_str() << std::endl;
-    } else {
-        std::cerr << "Error: Member type is null for member: " << member_name << std::endl;
+    // Get the type from the AST_BASIC_TYPE node
+    Node *type_node = member_node->get_kid(1);  // AST_BASIC_TYPE is kid(1)
+    std::shared_ptr<Type> member_type = type_node->get_type();
+    
+    // Get the declarator list
+    Node *declarator_list = member_node->get_kid(2);  // AST_DECLARATOR_LIST is kid(2)
+    
+    // Process each declarator in the list
+    for (unsigned i = 0; i < declarator_list->get_num_kids(); i++) {
+        Node *declarator = declarator_list->get_kid(i);
+        std::string member_name = declarator->get_kid(0)->get_str();
+        
+        if (member_type) {
+            std::cerr << "Member name: " << member_name << ", Member type: " << member_type->as_str() << std::endl;
+            
+            // Add the member to the StructType
+            StructType* struct_type_ptr = dynamic_cast<StructType*>(struct_type.get());
+            if (struct_type_ptr) {
+                Member new_member(member_name, member_type);
+                struct_type_ptr->add_member(new_member);
+                std::cerr << "Added member to StructType: " << member_name << std::endl;
+            } else {
+                std::cerr << "Error: Failed to cast to StructType" << std::endl;
+                SemanticError::raise(member_node->get_loc(), "Failed to cast to StructType");
+            }
+        } else {
+            std::cerr << "Error: Member type is null for member: " << member_name << std::endl;
+            SemanticError::raise(member_node->get_loc(), "Member type is null");
+        }
     }
-
-    // Add the member to the StructType
-    StructType* struct_type_ptr = dynamic_cast<StructType*>(struct_type.get());
-    if (struct_type_ptr) {
-      Member new_member(member_name, member_type);
-      struct_type_ptr->add_member(new_member);
-      std::cerr << "Added member to StructType: " << member_name << std::endl;
-    } else {
-      std::cerr << "Error: Failed to cast to StructType" << std::endl;
-      SemanticError::raise(member_node->get_loc(), "Failed to cast to StructType");
-    }
-  }
-
-  // Leave the struct scope
-  leave_scope();
-  std::cerr << "Left struct scope" << std::endl;
-
-  // Set the type of the struct definition node
-  n->set_type(struct_type);
-  std::cerr << "Set type of struct definition node: " << struct_type->as_str() << std::endl;
-
-  std::cerr << "Exiting visit_struct_type_definition" << std::endl;
 }
+m_cur_symtab=prev_scope;
+ }
+
 
 void SemanticAnalysis::visit_binary_expression(Node *n) {
     Node *op_node = n->get_kid(0);
@@ -1005,24 +1008,47 @@ void SemanticAnalysis::visit_field_ref_expression(Node *n) {
     Node *lhs = n->get_kid(0);
     visit(lhs);
 
-    std::shared_ptr<Type> lhs_type = lhs->get_type();
-    if (!lhs_type || !lhs_type->is_struct()) {
-        SemanticError::raise(n->get_loc(), "Left-hand side of '.' is not a struct");
+    std::shared_ptr<Type> current_type = lhs->get_type();
+    if (!current_type) {
+        SemanticError::raise(n->get_loc(), "Left-hand side has no type");
     }
 
-    // Get the field name
-    std::string field_name = n->get_kid(1)->get_str();
+    // Process each field access
+    for (unsigned i = 1; i < n->get_num_kids(); ++i) {
+        if (!current_type->is_struct()) {
+            SemanticError::raise(n->get_loc(), "Attempting to access field of non-struct type");
+        }
+        std::cerr << "is current_type a struct: " << current_type->as_str() << std::endl;
 
-    // Look up the field in the struct type
-    const Member *member = lhs_type->find_member(field_name);
-    if (!member) {
-        SemanticError::raise(n->get_loc(), ("Struct has no member named '" + field_name + "'").c_str());
+        const StructType *struct_type = dynamic_cast<const StructType *>(current_type.get());
+        if (!struct_type) {
+            SemanticError::raise(n->get_loc(), "Internal error: expected StructType");
+        }
+        //recursively check if the field name is a struct
+        if (current_type->is_struct()) {
+          std::cerr << "Recursively checking if the field name is a struct" << std::endl;
+          //std::cerr << "visiting(struct child) name: " << n->get_kid(i)->get_str() << std::endl;
+          Node *struct_child = n->get_kid(i);
+          std::cerr << "struct child name: " << struct_child->get_str() << std::endl;
+          //visit(struct_child);
+
+        //std::string field_name = n->get_kid(i)->get_str();
+        const Member *member = struct_type->find_member(struct_child->get_str());
+        if (!member) {
+            SemanticError::raise(n->get_loc(), ("Struct has no member named '" + struct_child->get_str() + "' in struct " + current_type->as_str()).c_str());
+        }
+
+        // Update the current type to the type of this field
+        current_type = member->get_type();
+        
+        std::cerr << "Accessed field: " << struct_child->get_str() << " of type: " << current_type->as_str() << std::endl;
+    }
     }
 
-    // Set the type of the field reference expression
-    n->set_type(member->get_type());
+    // Set the type of the entire field reference expression
+    n->set_type(current_type);
 
-    std::cerr << "Exiting visit_field_ref_expression" << std::endl;
+    std::cerr << "Exiting visit_field_ref_expression with final type: " << current_type->as_str() << std::endl;
 }
 
 void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
