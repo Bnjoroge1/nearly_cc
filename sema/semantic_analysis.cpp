@@ -213,6 +213,8 @@ void SemanticAnalysis::visit_named_declarator(Node *n) {
   std::cerr << "Type in visit_named_declarator: " << (type ? type->as_str() : "null") << std::endl;
 
   n->set_type(type);
+  
+
 
   std::string var_name;
   if (n->get_num_kids() > 0 && n->get_kid(0)->get_tag() == TOK_IDENT) {
@@ -222,13 +224,13 @@ void SemanticAnalysis::visit_named_declarator(Node *n) {
     std::cerr << "No identifier found in named declarator" << std::endl;
     SemanticError::raise(n->get_loc(), "Expected identifier in named declarator");
   }
+  n->set_str(var_name);
 
   if (var_name.empty()) {
     std::cerr << "Empty variable name in named declarator" << std::endl;
     SemanticError::raise(n->get_loc(), "Empty variable name in named declarator");
   }
 
-  n->set_str(var_name);
 
   m_var_type = type;
   std::cerr << "Variable name set: " << var_name << ", Type: " << (type ? type->as_str() : "null") << std::endl;
@@ -783,12 +785,27 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
         if (left_type->is_basic() && right_type->is_basic()) {
             // Integer assignment
             n->set_type(left_type);
-        } else if (left_type->is_pointer() && right_type->is_pointer()) {
-            // Pointer assignment
-            if (!are_compatible_pointer_types(left_type, right_type)) {
-                SemanticError::raise(n->get_loc(), "Incompatible pointer types in assignment");
-            }
+        } else if (left_type->is_pointer()) {
+    if (right_type->is_array()) {
+        // Array-to-pointer conversion
+        std::shared_ptr<Type> left_base = left_type->get_base_type();
+        std::shared_ptr<Type> right_base = right_type->get_base_type();
+        
+        if (left_base->is_same(right_base.get())) {
+            // Assignment is valid
             n->set_type(left_type);
+        } else {
+            SemanticError::raise(n->get_loc(), "Incompatible array-to-pointer conversion in assignment");
+        }
+    } else if (right_type->is_pointer()) {
+        // Pointer-to-pointer assignment
+        if (!are_compatible_pointer_types(left_type, right_type)) {
+            SemanticError::raise(n->get_loc(), "Incompatible pointer types in assignment");
+        }
+        n->set_type(left_type);
+    } else {
+        SemanticError::raise(n->get_loc(), "Incompatible types in assignment to pointer");
+    }
         } else if (left_type->is_struct() && right_type->is_struct()) {
             // Struct assignment
             if (!left_type->is_same(right_type.get())) {
