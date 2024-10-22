@@ -1,11 +1,13 @@
-struct Foo {
-  int x;
+struct Node {
+  int data;
+  struct Node *next;
 };
 
 int main(void) {
-  struct Foo f1;
-  struct Foo f2;
+  struct Node n1, n2, n3;
 
-  struct Foo *arr[2];
+  n1.data = 1;
+  n1.next = &n2;
+
   
 }

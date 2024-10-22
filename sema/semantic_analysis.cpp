@@ -742,6 +742,11 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
                 
                 // Get the name from the nested named declarator
                 member_name = declarator->get_kid(0)->get_kid(0)->get_str();
+            } else if (declarator->get_tag() == AST_POINTER_DECLARATOR) {
+            // Create pointer type
+            member_type = std::make_shared<PointerType>(base_type);
+                // Get name from nested named declarator
+                member_name = declarator->get_kid(0)->get_kid(0)->get_str();
             } else if (declarator->get_tag() == AST_NAMED_DECLARATOR) {
                 member_name = declarator->get_kid(0)->get_str();
             }
