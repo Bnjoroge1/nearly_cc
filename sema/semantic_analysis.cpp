@@ -130,6 +130,8 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
   bool is_unsigned = false;
   bool is_const = false;
   bool is_volatile = false;
+  bool is_long = false;
+  bool is_short = false;
   BasicTypeKind kind = BasicTypeKind::INT; // Default to int
   std::cerr << "Entering visit_basic_type" << std::endl;
   for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
@@ -152,12 +154,14 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
         break;
       case TOK_SHORT:
         kind = BasicTypeKind::SHORT;
+        is_short = true;
         break;
       case TOK_INT:
         kind = BasicTypeKind::INT;
         break;
       case TOK_LONG:
         kind = BasicTypeKind::LONG;
+        is_long = true;
         break;
       case TOK_VOID:
         kind = BasicTypeKind::VOID;
@@ -166,10 +170,18 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
         SemanticError::raise(n->get_loc(), "Unexpected token in basic type");
     }
   }
+  // Check for invalid combinations
+  if (kind == BasicTypeKind::CHAR && (is_long || is_short)) {
+    SemanticError::raise(n->get_loc(), "'long' and 'short' cannot be used with 'char'");
+  }
 
   // Validate type combination
   if (kind == BasicTypeKind::VOID && (is_unsigned || is_const || is_volatile)) {
     SemanticError::raise(n->get_loc(), "Invalid type qualifiers for void");
+  }
+  // Check for invalid combinations
+  if (kind == BasicTypeKind::CHAR && (kind == BasicTypeKind::LONG || kind == BasicTypeKind::SHORT)) {
+    SemanticError::raise(n->get_loc(), "'long' and 'short' cannot be used with 'char'");
   }
 
   // Create BasicType

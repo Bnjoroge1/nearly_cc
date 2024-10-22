@@ -39,6 +39,7 @@ private:
   SymbolTableList m_all_symtabs;
   std::shared_ptr<Type> m_var_type;
 
+
 public:
   SemanticAnalysis(const Options &options);
   virtual ~SemanticAnalysis();
