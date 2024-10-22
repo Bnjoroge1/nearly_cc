@@ -680,74 +680,91 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
         return pointer_base->is_same(array_base.get());
     }
     
-    // Add more rules for pointer types, struct types, etc. as needed
+    
     
     return false;
 }
 
  void SemanticAnalysis::visit_struct_type_definition(Node *n) {
-  std::cerr << "Entering visit_struct_type_definition" << std::endl;
+    std::cerr << "Entering visit_struct_type_definition" << std::endl;
 
-  // Get the name of the struct type
-  std::string name = n->get_kid(0)->get_str();
-  Location loc = n->get_loc();
-  std::cerr << "Struct name: " << name << std::endl;
+    // Get the name of the struct type
+    std::string name = n->get_kid(0)->get_str();
+    Location loc = n->get_loc();
+    std::cerr << "Struct name: " << name << std::endl;
 
-  // Create a new StructType
-  std::shared_ptr<Type> struct_type = std::make_shared<StructType>(name);
-  std::cerr << "Created StructType: " << struct_type->as_str() << std::endl;
+    // Create a new StructType
+    std::shared_ptr<Type> struct_type = std::make_shared<StructType>(name);
+    std::cerr << "Created StructType: " << struct_type->as_str() << std::endl;
 
-  // Add the struct type to the current symbol table
-  m_cur_symtab->add_entry(loc, SymbolKind::TYPE, "struct " + name, struct_type);
-  SymbolTable* prev_scope = m_cur_symtab;
-  std::cerr << "Added struct type to symbol table: struct " << name << std::endl;
+    // Add the struct type to the current symbol table immediately (for recursive types)
+    m_cur_symtab->add_entry(loc, SymbolKind::TYPE, "struct " + name, struct_type);
+    std::cerr << "Added struct type to symbol table: struct " << name << std::endl;
 
- // Create a new scope for the struct members
-SymbolTable *struct_scope = enter_scope("struct " + name);
-std::cerr << "Entered new scope for struct members" << std::endl;
+    // Create a new scope for the struct members
+    SymbolTable *prev_scope = m_cur_symtab;
+    m_cur_symtab = enter_scope("struct " + name);
+    std::cerr << "Entered new scope for struct members" << std::endl;
 
-// Process the struct members
-Node *member_list = n->get_kid(1);
-std::cerr << "Number of struct members: " << member_list->get_num_kids() << std::endl;
+    // Process the struct members
+    Node *member_list = n->get_kid(1);
+    std::cerr << "Number of struct members: " << member_list->get_num_kids() << std::endl;
 
-for (Node::const_iterator it = member_list->cbegin(); it != member_list->cend(); ++it) {
-    Node *member_node = *it;
-    std::cerr << "Processing member node" << std::endl;
-    visit(member_node);
-    
-    // Get the type from the AST_BASIC_TYPE node
-    Node *type_node = member_node->get_kid(1);  // AST_BASIC_TYPE is kid(1)
-    std::shared_ptr<Type> member_type = type_node->get_type();
-    
-    // Get the declarator list
-    Node *declarator_list = member_node->get_kid(2);  // AST_DECLARATOR_LIST is kid(2)
-    
-    // Process each declarator in the list
-    for (unsigned i = 0; i < declarator_list->get_num_kids(); i++) {
-        Node *declarator = declarator_list->get_kid(i);
-        std::string member_name = declarator->get_kid(0)->get_str();
+    for (Node::const_iterator it = member_list->cbegin(); it != member_list->cend(); ++it) {
+        Node *member_node = *it;
+        std::cerr << "Processing member node" << std::endl;
         
-        if (member_type) {
-            std::cerr << "Member name: " << member_name << ", Member type: " << member_type->as_str() << std::endl;
+        // Visit the member node to process its type
+        visit(member_node);
+        
+        // Get the base type from AST_BASIC_TYPE node
+        Node *type_node = member_node->get_kid(1);
+        std::shared_ptr<Type> base_type = type_node->get_type();
+        
+        // Get the declarator list
+        Node *declarator_list = member_node->get_kid(2);
+        
+        // Process each declarator in the list
+        for (unsigned i = 0; i < declarator_list->get_num_kids(); i++) {
+            Node *declarator = declarator_list->get_kid(i);
+            std::shared_ptr<Type> member_type = base_type;
+            std::string member_name;
             
-            // Add the member to the StructType
-            StructType* struct_type_ptr = dynamic_cast<StructType*>(struct_type.get());
-            if (struct_type_ptr) {
-                Member new_member(member_name, member_type);
-                struct_type_ptr->add_member(new_member);
-                std::cerr << "Added member to StructType: " << member_name << std::endl;
-            } else {
-                std::cerr << "Error: Failed to cast to StructType" << std::endl;
-                SemanticError::raise(member_node->get_loc(), "Failed to cast to StructType");
+            // Handle array declarator
+            if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+                // Get array size
+                Node *size_node = declarator->get_kid(1);
+                unsigned size = std::stoul(size_node->get_str());
+                
+                // Create array type
+                member_type = std::make_shared<ArrayType>(base_type, size);
+                
+                // Get the name from the nested named declarator
+                member_name = declarator->get_kid(0)->get_kid(0)->get_str();
+            } else if (declarator->get_tag() == AST_NAMED_DECLARATOR) {
+                member_name = declarator->get_kid(0)->get_str();
             }
-        } else {
-            std::cerr << "Error: Member type is null for member: " << member_name << std::endl;
-            SemanticError::raise(member_node->get_loc(), "Member type is null");
+            
+            if (member_type) {
+                std::cerr << "Member name: " << member_name 
+                         << ", Member type: " << member_type->as_str() << std::endl;
+                
+                // Add the member to the StructType
+                StructType* struct_type_ptr = dynamic_cast<StructType*>(struct_type.get());
+                if (struct_type_ptr) {
+                    Member new_member(member_name, member_type);
+                    struct_type_ptr->add_member(new_member);
+                    std::cerr << "Added member to StructType: " << member_name << std::endl;
+                }
+            } else {
+                SemanticError::raise(member_node->get_loc(), "Member type is null");
+            }
         }
     }
+
+    // Restore previous scope
+    m_cur_symtab = prev_scope;
 }
-m_cur_symtab=prev_scope;
- }
 
 
 void SemanticAnalysis::visit_binary_expression(Node *n) {
@@ -1170,43 +1187,48 @@ void SemanticAnalysis::visit_variable_ref(Node *n) {
 }
 
 void SemanticAnalysis::visit_literal_value(Node *n) {
-  std::cerr << "Visiting literal value node" << std::endl;
-  
-  // Check if the node has children
-  if (n->get_num_kids() > 0) {
-    Node *literal_child = n->get_kid(0);
-    std::string literal_str = literal_child->get_str();
-    std::shared_ptr<Type> literal_type;
+    std::cerr << "Visiting literal value node" << std::endl;
+    
+    if (n->get_num_kids() > 0) {
+        Node *literal_child = n->get_kid(0);
+        std::string literal_str = literal_child->get_str();
+        std::shared_ptr<Type> literal_type;
 
-    std::cerr << "Literal child tag: " << literal_child->get_tag() << std::endl;
-    std::cerr << "Literal value: " << literal_str << std::endl;
+        std::cerr << "Literal child tag: " << literal_child->get_tag() << std::endl;
+        std::cerr << "Literal value: " << literal_str << std::endl;
 
-    switch (literal_child->get_tag()) {
-      case TOK_INT_LIT:
-        std::cerr << "Processing integer literal: " << literal_str << std::endl;
-        literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
-        std::cerr << " Created literal type: " << literal_type->as_str() << std::endl;
-        break;
-      case TOK_CHAR_LIT:
-        literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
-        break;
-      case TOK_DOUBLE:
-        literal_type = std::make_shared<BasicType>(BasicTypeKind::SHORT, true);
-        break;
-      case TOK_STR_LIT:
-        literal_type = std::make_shared<ArrayType>(
-          std::make_shared<BasicType>(BasicTypeKind::CHAR, true),
-          literal_str.length() + 1  // +1 for null terminator
-        );
-        break;
-      default:
-        SemanticError::raise(n->get_loc(), "Unknown literal type");
+        switch (literal_child->get_tag()) {
+            case TOK_INT_LIT:
+                std::cerr << "Processing integer literal: " << literal_str << std::endl;
+                literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
+                std::cerr << " Created literal type: " << literal_type->as_str() << std::endl;
+                break;
+            case TOK_CHAR_LIT:
+                literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
+                break;
+            case TOK_DOUBLE:
+                literal_type = std::make_shared<BasicType>(BasicTypeKind::SHORT, true);
+                break;
+            case TOK_STR_LIT: {
+                // Create const char type for string literals
+                auto char_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
+                auto const_char_type = std::make_shared<QualifiedType>(char_type, TypeQualifier::CONST);
+                
+                // Create array of const char (including null terminator)
+                literal_type = std::make_shared<ArrayType>(
+                    const_char_type,
+                    literal_str.length() + 1  // +1 for null terminator
+                );
+                break;
+            }
+            default:
+                SemanticError::raise(n->get_loc(), "Unknown literal type");
+        }
+
+        n->set_type(literal_type);
+    } else {
+        SemanticError::raise(n->get_loc(), "Literal value node has no children");
     }
-
-    n->set_type(literal_type);
-  } else {
-    SemanticError::raise(n->get_loc(), "Literal value node has no children");
-  }
 }
 
 SymbolTable *SemanticAnalysis::enter_scope(const std::string &name) {
