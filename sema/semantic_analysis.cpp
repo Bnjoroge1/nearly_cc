@@ -564,36 +564,31 @@ int SemanticAnalysis::evaluate_constant_expression(Node *n) {
     return 0; // This line should never be reached
 }
 void SemanticAnalysis::visit_statement_list(Node *n) {
-    std::cerr << "Entering visit_statement_list" << std::endl;
-
+    // Save current symbol table
+    SymbolTable *prev_symtab = m_cur_symtab;
     
-
-    // Iterate through each statement in the list
-    for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
-        Node *stmt = *it;
-        
-        switch (stmt->get_tag()) {
-            case AST_VARIABLE_DECLARATION:
-                visit_variable_declaration(stmt);
-                break;
-            case AST_RETURN_EXPRESSION_STATEMENT:
-                visit_return_expression_statement(stmt);
-                break;
-            case AST_BINARY_EXPRESSION:
-                visit_binary_expression(stmt);
-                break;
-            // Add cases for other statement types as needed
-            default:
-                visit(stmt);  // For any other type of statement
-        }
+    // Check if this is a function body by looking at current scope name
+    bool is_function_body = false;
+    if (m_cur_symtab && m_cur_symtab->get_name().find("function ") == 0) {
+        is_function_body = true;
     }
 
+    // Create new scope for non-function statement lists
+    if (!is_function_body) {
+        int line_num = n->get_loc().get_line();
+        m_cur_symtab = enter_scope("block " + std::to_string(line_num));
+    }
 
+    // Visit all statements
+    for (auto i = n->cbegin(); i != n->cend(); ++i) {
+        visit(*i);
+    }
 
-    // Leave the scope after processing all statements
-    std::cerr << "Exiting visit_statement_list" << std::endl;
+    // Restore previous scope if we created a new one
+    if (!is_function_body) {
+        m_cur_symtab = prev_symtab;
+    }
 }
-
 void SemanticAnalysis::visit_return_expression_statement(Node *n) {
     // Get the current function's return type from the symbol table
     std::shared_ptr<Type> function_return_type = m_cur_symtab->get_fn_type();
@@ -800,6 +795,9 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
     // Get types of left and right operands
     std::shared_ptr<Type> left_type = left->get_type();
     std::shared_ptr<Type> right_type = right->get_type();
+    if (n->get_tag() == AST_BINARY_EXPRESSION && right_type->is_void()) {
+        SemanticError::raise(right->get_loc(), "Use of void value");
+    }
     if (!left_type) {
         std::cerr << "Left type is null" << std::endl;
         SemanticError::raise(left->get_loc(), "Left operand has no type");
@@ -968,11 +966,84 @@ void SemanticAnalysis::visit_unary_expression(Node *n) {
 
 
 void SemanticAnalysis::visit_postfix_expression(Node *n) {
-  // TODO: implement
+    // Visit the array operand
+    Node *array = n->get_kid(0);
+    visit(array);
+
+    // Get array type
+    std::shared_ptr<Type> array_type = array->get_type();
+    if (!array_type) {
+        SemanticError::raise(n->get_loc(), "Array operand has no type");
+    }
+
+    //  operand is array or pointer
+    if (!array_type->is_array() && !array_type->is_pointer()) {
+        SemanticError::raise(n->get_loc(), "Subscript operator requires array or pointer type");
+    }
+
+    // Visit index expression
+    Node *index = n->get_kid(1);
+    visit(index);
+
+    // index is integral type
+    if (!index->get_type()->is_integral()) {
+        SemanticError::raise(index->get_loc(), "Array index must be integral type");
+    }
+
+    // Result type is the element type
+    n->set_type(array_type->get_base_type());
 }
 
 void SemanticAnalysis::visit_conditional_expression(Node *n) {
-  // TODO: implement
+    // Visit condition (first operand)
+    Node *condition = n->get_kid(0);
+    visit(condition);
+    
+    // Visit true expression (second operand)
+    Node *true_expr = n->get_kid(1);
+    visit(true_expr);
+    
+    // Visit false expression (third operand)
+    Node *false_expr = n->get_kid(2);
+    visit(false_expr);
+
+    // Get types of all operands
+    std::shared_ptr<Type> cond_type = condition->get_type();
+    std::shared_ptr<Type> true_type = true_expr->get_type();
+    std::shared_ptr<Type> false_type = false_expr->get_type();
+
+    if (!cond_type || !true_type || !false_type) {
+        SemanticError::raise(n->get_loc(), "Invalid types in conditional expression");
+    }
+
+    // Condition must be an arithmetic or pointer type
+    if (!cond_type->is_basic() && !cond_type->is_pointer()) {
+        SemanticError::raise(condition->get_loc(), "Condition must be arithmetic or pointer type");
+    }
+
+    // Handle type compatibility between true and false expressions
+    if (true_type->is_basic() && false_type->is_basic()) {
+        // For arithmetic types, use type promotion rules
+        n->set_type(promote_arithmetic_types(true_type, false_type));
+    } 
+    else if (true_type->is_pointer() && false_type->is_pointer()) {
+        // For pointers, check compatibility
+        if (!are_compatible_pointer_types(true_type, false_type)) {
+            SemanticError::raise(n->get_loc(), "Incompatible pointer types in conditional expression");
+        }
+        // Result type is the type of the true expression
+        n->set_type(true_type);
+    }
+    else if (true_type->is_struct() && false_type->is_struct()) {
+        // For structs, types must be identical
+        if (!true_type->is_same(false_type.get())) {
+            SemanticError::raise(n->get_loc(), "Incompatible struct types in conditional expression");
+        }
+        n->set_type(true_type);
+    }
+    else {
+        SemanticError::raise(n->get_loc(), "Incompatible types in conditional expression");
+    }
 }
 
 void SemanticAnalysis::visit_cast_expression(Node *n) {
@@ -1033,8 +1104,14 @@ void SemanticAnalysis::visit_function_call_expression(Node *n) {
     }
 
     // Set the type of the function call expression to the return type of the function
-    n->set_type(func_type->get_base_type());
+   std::shared_ptr<Type> return_type = func_type->get_base_type();
+    n->set_type(return_type);
+    if (return_type->is_void() && n->get_tag() == AST_BINARY_EXPRESSION) {
+        SemanticError::raise(n->get_loc(), "Use of void value");
+    }
+    
 
+    
     std::cerr << "Exiting visit_function_call_expression" << std::endl;
 }
 
@@ -1359,10 +1436,18 @@ void SemanticAnalysis::visit_assignment_expression(Node *n) {
 
     std::shared_ptr<Type> lhs_type = lhs->get_type();
     std::shared_ptr<Type> rhs_type = rhs->get_type();
+    std::cerr << "LHS type: " << (lhs_type ? lhs_type->as_str() : "null") << std::endl;
+    std::cerr << "RHS type: " << (rhs_type ? rhs_type->as_str() : "null") << std::endl;
+    
 
+    
     if (!lhs_type || !rhs_type) {
-        SemanticError::raise(n->get_loc(), "Invalid types in assignment");
+        SemanticError::raise(rhs->get_loc(), "Invalid types in assignment");
     }
+    if (rhs_type->is_void()) {
+        SemanticError::raise(n->get_loc(), "Use of void value");
+    }
+    
 
     // Check if lhs is an lvalue
     if (!is_lvalue(lhs)) {
