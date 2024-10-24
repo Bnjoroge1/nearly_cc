@@ -1056,7 +1056,6 @@ void SemanticAnalysis::visit_cast_expression(Node *n) {
   // TODO: implement
 }
 void SemanticAnalysis::visit_for_statement(Node *n) {
-    std::cerr << "Entering visit_for_statement" << std::endl;
 
     // Visit the initialization, condition, and increment expressions
     if (n->get_num_kids() > 0) visit(n->get_kid(0)); 
@@ -1068,13 +1067,12 @@ void SemanticAnalysis::visit_for_statement(Node *n) {
     SymbolTable *prev_symtab = m_cur_symtab;
     m_cur_symtab = enter_scope("block 10");
 
-    // Visit the loop body
+    
     if (n->get_num_kids() > 3) visit(n->get_kid(3)); 
 
     // Restore the previous scope
     m_cur_symtab = prev_symtab;
 
-    std::cerr << "Exiting visit_for_statement" << std::endl;
 }
 
 void SemanticAnalysis::visit_function_call_expression(Node *n) {
