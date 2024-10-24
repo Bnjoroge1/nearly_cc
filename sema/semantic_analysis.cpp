@@ -50,7 +50,6 @@ SemanticAnalysis::~SemanticAnalysis() {
 void SemanticAnalysis::visit_struct_type(Node *n) {
   std::string struct_name = n->get_kid(0)->get_str();
   std::string full_name = "struct " + struct_name;
-  std::cerr << "Looking up struct type: " << full_name << std::endl;
   Symbol *sym = m_cur_symtab->lookup_recursive(full_name);
   if (!sym || sym->get_kind() != SymbolKind::TYPE) {
     SemanticError::raise(n->get_loc(), ("Undefined struct type '" + struct_name + "'").c_str());
@@ -78,7 +77,7 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
     Node *declarator = *it;
     
     // Visit the declarator to determine the full type
-    m_var_type = base_type;  // Start with the base type
+    m_var_type = base_type;  
     visit(declarator);
     std::shared_ptr<Type> full_type = m_var_type;
 
@@ -100,7 +99,6 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
       var_name = declarator->get_str();
     }
 
-    std::cerr << "Variable name: " << var_name << std::endl;
 
     // Check if the variable name is empty
     if (var_name.empty()) {
@@ -117,7 +115,7 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
     if (!sym) {
       SemanticError::raise(declarator->get_loc(), "Failed to create symbol for variable");
     }
-    std::cerr << "Created symbol for variable: " << var_name << std::endl;
+    
 
     // Add the symbol to the current symbol table
     m_cur_symtab->add_entry(declarator->get_loc(), SymbolKind::VARIABLE, var_name, full_type);
@@ -133,7 +131,6 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
   bool is_long = false;
   bool is_short = false;
   BasicTypeKind kind = BasicTypeKind::INT; // Default to int
-  std::cerr << "Entering visit_basic_type" << std::endl;
   for (Node::const_iterator it = n->cbegin(); it != n->cend(); ++it) {
     Node *child = *it;
     switch (child->get_tag()) {
@@ -205,46 +202,57 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
     type = std::make_shared<QualifiedType>(type, TypeQualifier::VOLATILE);
   }
 
-  std::cerr << "Created type in visit_basic_type: " << type->as_str() << std::endl;
 
 
   // Annotate the AST node
   n->set_type(type);
   m_var_type = type;
-  std::cerr << "Type set on node in visit_basic_type: " << (n->get_type() ? n->get_type()->as_str() : "null") << std::endl;
 
 }
 
 void SemanticAnalysis::visit_named_declarator(Node *n) {
+  //set the type of the named declarator to the current variable type
   std::shared_ptr<Type> type = m_var_type;
-  std::cerr << "Type in visit_named_declarator: " << (type ? type->as_str() : "null") << std::endl;
-
   n->set_type(type);
-  
 
-
+  //get the variable name
   std::string var_name;
   if (n->get_num_kids() > 0 && n->get_kid(0)->get_tag() == TOK_IDENT) {
     var_name = n->get_kid(0)->get_str();
-    std::cerr << "Found identifier: " << var_name << std::endl;
   } else {
-    std::cerr << "No identifier found in named declarator" << std::endl;
     SemanticError::raise(n->get_loc(), "Expected identifier in named declarator");
   }
   n->set_str(var_name);
 
   if (var_name.empty()) {
-    std::cerr << "Empty variable name in named declarator" << std::endl;
     SemanticError::raise(n->get_loc(), "Empty variable name in named declarator");
   }
-
-
+  //set the type of the named declarator to the current variable type
   m_var_type = type;
-  std::cerr << "Variable name set: " << var_name << ", Type: " << (type ? type->as_str() : "null") << std::endl;
+}
+void SemanticAnalysis::visit_if_statement(Node *n) {
+    // Visit the condition expression
+    Node *condition = n->get_kid(0);
+    visit(condition);
+
+    // Check that the condition is of a valid type
+    std::shared_ptr<Type> condition_type = condition->get_type();
+    if (!condition_type || (!condition_type->is_basic() && !condition_type->is_pointer())) {
+        SemanticError::raise(n->get_loc(), "Condition of if statement must be a basic or pointer type");
+    }
+
+    // Visit the 'then' branch
+    Node *then_branch = n->get_kid(1);
+    visit(then_branch);
+
+    // Visit the 'else' branch if it exists
+    if (n->get_num_kids() > 2) {
+        Node *else_branch = n->get_kid(2);
+        visit(else_branch);
+    }
 }
 
 void SemanticAnalysis::visit_pointer_declarator(Node *n) {
-    std::cerr << "Entering visit_pointer_declarator" << std::endl;
     // Create a pointer type based on the current variable type
     m_var_type = std::make_shared<PointerType>(m_var_type);
 
@@ -253,19 +261,14 @@ void SemanticAnalysis::visit_pointer_declarator(Node *n) {
 
     
 
-    std::cerr << "Created pointer type: " << m_var_type->as_str() << std::endl;
     n->set_str(n->get_kid(0)->get_str());
 
 
     // Set the type of this node
     n->set_type(m_var_type);
-    std::cerr << "Created pointer type: " << m_var_type->as_str() << std::endl;
-    std::cerr << "Variable name: " << n->get_str() << std::endl;
-
-    std::cerr << "Exiting visit_pointer_declarator" << std::endl;
+    
 }
 void SemanticAnalysis::visit_array_declarator(Node *n) {
-  std::cerr << "Entering visit_array_declarator" << std::endl;
   std::shared_ptr<Type> base_type = m_var_type;
   Node *size_expr = n->get_kid(1);
   int array_size = -1;
@@ -273,7 +276,6 @@ void SemanticAnalysis::visit_array_declarator(Node *n) {
   // Process the size expression
   if (size_expr) {
     visit(size_expr);
-    std::cerr << "Size expression tag: " << size_expr->get_tag() << std::endl;
     
     if (size_expr->get_tag() == TOK_INT_LIT) {
       try {
@@ -311,10 +313,8 @@ void SemanticAnalysis::visit_array_declarator(Node *n) {
   m_var_type = array_type;
   n->set_type(array_type);
 
-  std::cerr << "Array declarator processed. Name: " << n->get_str() << ", Type: " << array_type->as_str() << std::endl;
 }
 void SemanticAnalysis::visit_function_definition(Node *n) {
-  std::cerr << "Entering visit_function_definition" << std::endl;
 
   // Extract function name and return type
   std::string func_name = n->get_kid(1)->get_str();
@@ -375,7 +375,6 @@ void SemanticAnalysis::visit_function_definition(Node *n) {
   // Return to the previous scope
   leave_scope();
 
-  std::cerr << "Exiting visit_function_definition" << std::endl;
 }
 
 void SemanticAnalysis::visit_function_declaration(Node *n) {
@@ -383,12 +382,10 @@ void SemanticAnalysis::visit_function_declaration(Node *n) {
   std::string func_name = n->get_kid(1)->get_str();
   visit(n->get_kid(0));  // Visit return type
   std::shared_ptr<Type> return_type = n->get_kid(0)->get_type();
-  std::cerr << "Return type in visit_function_declaration: " << return_type->as_str() << std::endl;
 
   // Check if function already exists
   Symbol *existing_sym = m_cur_symtab->lookup_local(func_name);
   if (existing_sym) {
-    std::cerr << "Function already declared: " << func_name << std::endl;
     // Function already declared, check if types match
     std::shared_ptr<FunctionType> existing_type = std::dynamic_pointer_cast<FunctionType>(existing_sym->get_type());
     if (!existing_type || existing_type->get_return_type() != return_type) {
@@ -400,37 +397,30 @@ void SemanticAnalysis::visit_function_declaration(Node *n) {
     // Create a new symbol table for the function
     m_cur_symtab = enter_scope("function " + func_name);
   }
-  std::cerr << "Created new scope for function: " << func_name << std::endl;
   // Process parameter list
   Node *param_list = n->get_kid(2);
   if (!param_list) {
     SemanticError::raise(n->get_loc(), "Function declaration must have a parameter list");
   }
-  std::cerr << "Param list in visit_function_declaration: " << param_list->get_num_kids() << std::endl;
   std::vector<std::shared_ptr<Type>> param_types;
   for (Node::const_iterator it = param_list->cbegin(); it != param_list->cend(); ++it) {
     Node *param_node = *it;
     if (!param_node) {
-      std::cerr << "Warning: Null parameter node found" << std::endl;
-      continue;
+   continue;
     }
-    std::cerr << "Processing parameter node with tag: " << param_node->get_tag() << std::endl;
   
     visit(param_node);
     if (!param_node->get_type()) {
-      std::cerr << "Warning: Parameter node has no type after visiting" << std::endl;
-      continue;
+   continue;
     }
 
     std::shared_ptr<Type> param_type = param_node->get_type();
-    std::cerr << "Parameter type in visit_function_declaration: " << param_type->as_str() << std::endl;
     // Convert array parameters to pointer types
     if (auto array_type = std::dynamic_pointer_cast<ArrayType>(param_type)) {
       param_type = std::make_shared<PointerType>(array_type->get_base_type());
     }
     param_types.push_back(param_type);
   }
-  std::cerr << "Param types in visit_function_declaration: ";
   // Create or update FunctionType object
   std::shared_ptr<Type> func_type = std::make_shared<FunctionType>(return_type, param_types);
 
@@ -438,17 +428,14 @@ void SemanticAnalysis::visit_function_declaration(Node *n) {
     // Add function to global symbol table
     m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
   }
-  std::cerr << "Created FunctionType: " << func_type->as_str() << std::endl;
 
   // Set the type of the function declaration node
   n->set_type(func_type);
-  std::cerr << "Set type of function declaration node: " << func_type->as_str() << std::endl;
   // Return to the previous scope
   leave_scope();
 }
 
 void SemanticAnalysis::visit_function_parameter_list(Node *n) {
-  std::cerr << "Entering visit_function_parameter_list" << std::endl;
 
   std::vector<std::shared_ptr<Type>> param_types;
 
@@ -463,17 +450,17 @@ void SemanticAnalysis::visit_function_parameter_list(Node *n) {
     std::shared_ptr<Type> param_type = param_node->get_type();
     param_types.push_back(param_type);
 
-    std::cerr << "Processed parameter with type: " << param_type->as_str() << std::endl;
+   
   }
 
   // Set the parameter types on the parameter list node
   n->set_type(std::make_shared<FunctionType>(nullptr, param_types));
 
-  std::cerr << "Exiting visit_function_parameter_list" << std::endl;
+
 }
 
 void SemanticAnalysis::visit_function_parameter(Node *n) {
-    std::cerr << "Entering visit_function_parameter" << std::endl;
+   
     
     // Visit the type node
     visit(n->get_kid(0));
@@ -516,7 +503,7 @@ void SemanticAnalysis::visit_function_parameter(Node *n) {
     // Set the type of the parameter node
     n->set_type(param_type);
     
-    std::cerr << "Parameter processed: " << param_name << " with type " << param_type->as_str() << std::endl;
+   
 }
 bool SemanticAnalysis::is_constant_expression(Node *n) {
     switch (n->get_tag()) {
@@ -568,7 +555,7 @@ int SemanticAnalysis::evaluate_constant_expression(Node *n) {
         default:
             SemanticError::raise(n->get_loc(), "Invalid node type in constant expression");
     }
-    return 0; // This line should never be reached
+    return 0; 
 }
 void SemanticAnalysis::visit_statement_list(Node *n) {
     // Save current symbol table
@@ -577,12 +564,11 @@ void SemanticAnalysis::visit_statement_list(Node *n) {
     // Check if this is a function body by looking at current scope name
     bool is_function_body = false;
     if (m_cur_symtab && m_cur_symtab->get_name().find("function ") == 0) {
-        std::cerr << "is this function body: " << m_cur_symtab->get_name() << std::endl;
-        is_function_body = true;
+     is_function_body = true;
     }
 
     
-    std::cerr << "is this for Node tag: " << n->get_tag() << std::endl;
+   
     
 
     // Visit all statements
@@ -616,8 +602,7 @@ void SemanticAnalysis::visit_return_expression_statement(Node *n) {
             SemanticError::raise(expr->get_loc(), "Return expression has no type");
         }
     }
-    std::cerr << "expr_type: " << expr_type->as_str() << std::endl;
-    std::cerr << "function_return_type: " << function_return_type->as_str() << std::endl;
+    
 
     // Type checking
     if (function_return_type->is_void()) {
@@ -688,35 +673,31 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
 }
 
  void SemanticAnalysis::visit_struct_type_definition(Node *n) {
-    std::cerr << "Entering visit_struct_type_definition" << std::endl;
+   
 
     // Get the name of the struct type
     std::string name = n->get_kid(0)->get_str();
     Location loc = n->get_loc();
-    std::cerr << "Struct name: " << name << std::endl;
 
     // Create a new StructType
     std::shared_ptr<Type> struct_type = std::make_shared<StructType>(name);
-    std::cerr << "Created StructType: " << struct_type->as_str() << std::endl;
-
+   
     // Add the struct type to the current symbol table immediately (for recursive types)
     m_cur_symtab->add_entry(loc, SymbolKind::TYPE, "struct " + name, struct_type);
-    std::cerr << "Added struct type to symbol table: struct " << name << std::endl;
+ 
 
     // Create a new scope for the struct members
     SymbolTable *prev_scope = m_cur_symtab;
     m_cur_symtab = enter_scope("struct " + name);
-    std::cerr << "Entered new scope for struct members" << std::endl;
+  
 
     // Process the struct members
     Node *member_list = n->get_kid(1);
-    std::cerr << "Number of struct members: " << member_list->get_num_kids() << std::endl;
+  
 
     for (Node::const_iterator it = member_list->cbegin(); it != member_list->cend(); ++it) {
         Node *member_node = *it;
-        std::cerr << "Processing member node" << std::endl;
-        
-        // Visit the member node to process its type
+     // Visit the member node to process its type
         visit(member_node);
         
         // Get the base type from AST_BASIC_TYPE node
@@ -753,16 +734,14 @@ bool SemanticAnalysis::is_assignable(std::shared_ptr<Type> target, std::shared_p
             }
             
             if (member_type) {
-                std::cerr << "Member name: " << member_name 
-                         << ", Member type: " << member_type->as_str() << std::endl;
+                
                 
                 // Add the member to the StructType
                 StructType* struct_type_ptr = dynamic_cast<StructType*>(struct_type.get());
                 if (struct_type_ptr) {
                     Member new_member(member_name, member_type);
                     struct_type_ptr->add_member(new_member);
-                    std::cerr << "Added member to StructType: " << member_name << std::endl;
-                }
+                 }
             } else {
                 SemanticError::raise(member_node->get_loc(), "Member type is null");
             }
@@ -780,21 +759,17 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
     Node *right = n->get_kid(2);
     int op = op_node->get_tag();
 
-    std::cerr << "visiting left: " << left->get_tag() << std::endl;
-    std::cerr << "visiting right: " << right->get_tag() << std::endl;
-    std::cerr << "Operator: " << op << std::endl;
+   
 
     // Visit left and right operands
     if (left->get_tag() == AST_VARIABLE_REF) {
-        std::cerr << "Explicitly calling visit_variable_ref for left operand" << std::endl;
-        visit_variable_ref(left);
+     visit_variable_ref(left);
     } else {
         visit(left);
     }
 
     if (right->get_tag() == AST_VARIABLE_REF) {
-        std::cerr << "Explicitly calling visit_variable_ref for right operand" << std::endl;
-        visit_variable_ref(right);
+     visit_variable_ref(right);
     } else {
         visit(right);
     }
@@ -805,12 +780,10 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
         SemanticError::raise(right->get_loc(), "Use of void value");
     }
     if (!left_type) {
-        std::cerr << "Left type is null" << std::endl;
-        SemanticError::raise(left->get_loc(), "Left operand has no type");
+     SemanticError::raise(left->get_loc(), "Left operand has no type");
     }
     if (right_type) {
-      std::cerr << "Right type: " << right_type->as_str() << std::endl;
-    }
+   }
     if (!left_type || !right_type) {
         SemanticError::raise(n->get_loc(), "Invalid operand types in binary expression");
     }
@@ -894,14 +867,12 @@ void SemanticAnalysis::visit_binary_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_unary_expression(Node *n) {
-    std::cerr << "Entering visit_unary_expression" << std::endl;
 
     // Get the operator and operand
     Node *op_node = n->get_kid(0);
     Node *operand = n->get_kid(1);
     int op = op_node->get_tag();
 
-    std::cerr << "Unary operator: " << op << std::endl;
 
     // Visit the operand
     visit(operand);
@@ -913,7 +884,6 @@ void SemanticAnalysis::visit_unary_expression(Node *n) {
         SemanticError::raise(operand->get_loc(), "Operand has no type");
     }
 
-    std::cerr << "Operand type: " << operand_type->as_str() << std::endl;
 
     // Handle different unary operators
     switch (op) {
@@ -965,8 +935,7 @@ void SemanticAnalysis::visit_unary_expression(Node *n) {
             SemanticError::raise(n->get_loc(), "Unknown unary operator");
     }
 
-    std::cerr << "Unary expression type: " << n->get_type()->as_str() << std::endl;
-    std::cerr << "Exiting visit_unary_expression" << std::endl;
+    
 }
 
 
@@ -1001,15 +970,15 @@ void SemanticAnalysis::visit_postfix_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_conditional_expression(Node *n) {
-    // Visit condition (first operand)
+    // Visit first operand
     Node *condition = n->get_kid(0);
     visit(condition);
     
-    // Visit true expression (second operand)
+    // Visit second operand
     Node *true_expr = n->get_kid(1);
     visit(true_expr);
     
-    // Visit false expression (third operand)
+    // Visit third operand
     Node *false_expr = n->get_kid(2);
     visit(false_expr);
 
@@ -1029,7 +998,7 @@ void SemanticAnalysis::visit_conditional_expression(Node *n) {
 
     // Handle type compatibility between true and false expressions
     if (true_type->is_basic() && false_type->is_basic()) {
-        // For arithmetic types, use type promotion rules
+        
         n->set_type(promote_arithmetic_types(true_type, false_type));
     } 
     else if (true_type->is_pointer() && false_type->is_pointer()) {
@@ -1053,9 +1022,8 @@ void SemanticAnalysis::visit_conditional_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_cast_expression(Node *n) {
-    std::cerr << "Entering visit_cast_expression" << std::endl;
 
-    // Visit the expression being cast
+
     Node *expr = n->get_kid(0);
     visit(expr);
 
@@ -1079,7 +1047,6 @@ void SemanticAnalysis::visit_cast_expression(Node *n) {
     // Annotate the node with the target type
     n->set_type(target_type);
 
-    std::cerr << "Exiting visit_cast_expression" << std::endl;
 }
 
 // check if a cast is valid
@@ -1095,6 +1062,9 @@ bool SemanticAnalysis::is_castable(std::shared_ptr<Type> from, std::shared_ptr<T
     }
 
     // Handle casting between pointers
+    if (from->is_pointer() && to->is_pointer()) {
+        return are_compatible_pointer_types(from, to);
+    }
     
 
     // Allow casting from any type to void pointer
@@ -1117,7 +1087,6 @@ void SemanticAnalysis::visit_for_statement(Node *n) {
     if (n->get_num_kids() > 2) visit(n->get_kid(2)); 
 
     // new scope for the loop body
-    int line_num = n->get_loc().get_line();
     SymbolTable *prev_symtab = m_cur_symtab;
     m_cur_symtab = enter_scope("block 10");
 
@@ -1189,7 +1158,6 @@ void SemanticAnalysis::visit_function_call_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_field_ref_expression(Node *n) {
-    std::cerr << "Entering visit_field_ref_expression" << std::endl;
 
     // Visit the left-hand side (struct expression)
     Node *lhs = n->get_kid(0);
@@ -1205,41 +1173,35 @@ void SemanticAnalysis::visit_field_ref_expression(Node *n) {
         if (!current_type->is_struct()) {
             SemanticError::raise(n->get_loc(), "Attempting to access field of non-struct type");
         }
-        std::cerr << "is current_type a struct: " << current_type->as_str() << std::endl;
-
-        const StructType *struct_type = dynamic_cast<const StructType *>(current_type.get());
+     const StructType *struct_type = dynamic_cast<const StructType *>(current_type.get());
         if (!struct_type) {
             SemanticError::raise(n->get_loc(), "Internal error: expected StructType");
         }
         //recursively check if the field name is a struct
         if (current_type->is_struct()) {
-          std::cerr << "Recursively checking if the field name is a struct" << std::endl;
-          //std::cerr << "visiting(struct child) name: " << n->get_kid(i)->get_str() << std::endl;
+       
           Node *struct_child = n->get_kid(i);
-          std::cerr << "struct child name: " << struct_child->get_str() << std::endl;
-          //visit(struct_child);
+      
 
-        //std::string field_name = n->get_kid(i)->get_str();
-        const Member *member = struct_type->find_member(struct_child->get_str());
-        if (!member) {
-            SemanticError::raise(n->get_loc(), ("Struct has no member named '" + struct_child->get_str() + "' in struct " + current_type->as_str()).c_str());
+            const Member *member = struct_type->find_member(struct_child->get_str());
+            if (!member) {
+                SemanticError::raise(n->get_loc(), ("Struct has no member named '" + struct_child->get_str() + "' in struct " + current_type->as_str()).c_str());
         }
 
         // Update the current type to the type of this field
         current_type = member->get_type();
         
-        std::cerr << "Accessed field: " << struct_child->get_str() << " of type: " << current_type->as_str() << std::endl;
-    }
+     }
     }
 
     // Set the type of the entire field reference expression
     n->set_type(current_type);
 
-    std::cerr << "Exiting visit_field_ref_expression with final type: " << current_type->as_str() << std::endl;
+    
 }
 
 void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
-    std::cerr << "Entering visit_indirect_field_ref_expression" << std::endl;
+    
 
     // Visit the left-hand side (pointer to struct expression)
     Node *lhs = n->get_kid(0);
@@ -1268,7 +1230,7 @@ void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
     // Set the type of the field reference expression
     n->set_type(member->get_type());
 
-    std::cerr << "Exiting visit_indirect_field_ref_expression" << std::endl;
+   
 }
 
 void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
@@ -1305,23 +1267,20 @@ void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_variable_ref(Node *n) {
-    std::cerr << "Visiting variable reference" << std::endl;
 
     if (n->get_num_kids() != 1 || n->get_kid(0)->get_tag() != TOK_IDENT) {
         SemanticError::raise(n->get_loc(), "Invalid variable reference node structure");
     }
     std::string var_name = n->get_kid(0)->get_str();
-    std::cerr << "Visiting variable reference: " << var_name << std::endl;
-  
+
     // Look up the variable in the current symbol table and its parents
     Symbol *sym = m_cur_symtab->lookup_recursive(var_name);
-    std::cerr << "Current scope: " << m_cur_symtab->get_name() << std::endl;
-    std::cerr << "Lookup for variable: " << var_name << std::endl;
+  
   
     if (!sym) {
         SemanticError::raise(n->get_loc(), ("Undefined variable '" + var_name + "'").c_str());
     }
-    std::cerr << "sym kind: " << static_cast<int>(sym->get_kind()) << std::endl;
+    
     // Handle both variables and functions
     if (sym->get_kind() != SymbolKind::VARIABLE && sym->get_kind() != SymbolKind::FUNCTION) {
         SemanticError::raise(n->get_loc(), ("'" + var_name + "' is neither a variable nor a function").c_str());
@@ -1331,7 +1290,6 @@ void SemanticAnalysis::visit_variable_ref(Node *n) {
     if (!var_type) {
         SemanticError::raise(n->get_loc(), ("Variable '" + var_name + "' has no type information").c_str());
     }
-    std::cerr << "Variable type: " << var_type->as_str() << std::endl;
   
     // Set the type of the node to the variable's type
     n->set_type(var_type);
@@ -1339,26 +1297,21 @@ void SemanticAnalysis::visit_variable_ref(Node *n) {
     // Annotate the node with the symbol
     n->set_symbol(sym);
 
-    std::cerr << "Variable reference processed: " << var_name << " with type " << var_type->as_str() << std::endl;
+
 }
 
 void SemanticAnalysis::visit_literal_value(Node *n) {
-    std::cerr << "Visiting literal value node" << std::endl;
+    
     
     if (n->get_num_kids() > 0) {
         Node *literal_child = n->get_kid(0);
         std::string literal_str = literal_child->get_str();
         std::shared_ptr<Type> literal_type;
 
-        std::cerr << "Literal child tag: " << literal_child->get_tag() << std::endl;
-        std::cerr << "Literal value: " << literal_str << std::endl;
-
-        switch (literal_child->get_tag()) {
+  switch (literal_child->get_tag()) {
             case TOK_INT_LIT:
-                std::cerr << "Processing integer literal: " << literal_str << std::endl;
-                literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
-                std::cerr << " Created literal type: " << literal_type->as_str() << std::endl;
-                break;
+             literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
+             break;
             case TOK_CHAR_LIT:
                 literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
                 break;
@@ -1373,7 +1326,7 @@ void SemanticAnalysis::visit_literal_value(Node *n) {
                 // Create array of const char (including null terminator)
                 literal_type = std::make_shared<ArrayType>(
                     const_char_type,
-                    literal_str.length() + 1  // +1 for null terminator
+                    literal_str.length() + 1 
                 );
                 break;
             }
@@ -1399,17 +1352,16 @@ void SemanticAnalysis::leave_scope() {
   m_cur_symtab = m_cur_symtab->get_parent();
 }
 
-// TODO: implement helper functions
 std::shared_ptr<Type> SemanticAnalysis::promote_arithmetic_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right) {
     if (!left->is_basic() || !right->is_basic()) {
-        return nullptr;  // Not arithmetic types
+        return nullptr;  
     }
 
     BasicType* left_basic = dynamic_cast<BasicType*>(left.get());
     BasicType* right_basic = dynamic_cast<BasicType*>(right.get());
 
     if (!left_basic || !right_basic) {
-        return nullptr;  // Dynamic cast failed
+        return nullptr;  
     }
 
     // Promote to int or unsigned int if less precise
@@ -1420,7 +1372,6 @@ std::shared_ptr<Type> SemanticAnalysis::promote_arithmetic_types(std::shared_ptr
         right_basic = new BasicType(BasicTypeKind::INT, right_basic->is_signed());
     }
 
-    // Promote to the more precise type
     // Promote to the more precise type
     if (left_basic->get_basic_type_kind() > right_basic->get_basic_type_kind()) {
         return std::make_shared<BasicType>(left_basic->get_basic_type_kind(), left_basic->is_signed());
@@ -1446,7 +1397,7 @@ bool SemanticAnalysis::are_compatible_pointer_types(std::shared_ptr<Type> left, 
     PointerType* right_ptr = dynamic_cast<PointerType*>(right.get());
 
     if (!left_ptr || !right_ptr) {
-        return false;  // Dynamic cast failed
+        return false;  
     }
 
     std::shared_ptr<Type> left_base = left_ptr->get_base_type();
@@ -1480,24 +1431,20 @@ bool SemanticAnalysis::is_const_qualified(std::shared_ptr<Type> type) {
 bool SemanticAnalysis::is_lvalue(Node *n) {
     switch (n->get_tag()) {
         case AST_VARIABLE_REF:
-            // Variable reference is always an lvalue
             return true;
         case AST_ARRAY_ELEMENT_REF_EXPRESSION:
-            // Array element reference is an lvalue
             return true;
         case AST_UNARY_EXPRESSION:
-            // Pointer dereference is an lvalue
             return n->get_kid(0)->get_tag() == TOK_ASTERISK;
         case AST_FIELD_REF_EXPRESSION:
         case AST_INDIRECT_FIELD_REF_EXPRESSION:
-            // Struct field reference is an lvalue
             return true;
         default:
             return false;
     }
 }
 void SemanticAnalysis::visit_assignment_expression(Node *n) {
-    std::cerr << "Entering visit_assignment_expression" << std::endl;
+    
 
     // Visit left-hand side (lvalue)
     Node *lhs = n->get_kid(0);
@@ -1509,8 +1456,6 @@ void SemanticAnalysis::visit_assignment_expression(Node *n) {
 
     std::shared_ptr<Type> lhs_type = lhs->get_type();
     std::shared_ptr<Type> rhs_type = rhs->get_type();
-    std::cerr << "LHS type: " << (lhs_type ? lhs_type->as_str() : "null") << std::endl;
-    std::cerr << "RHS type: " << (rhs_type ? rhs_type->as_str() : "null") << std::endl;
     
 
     
@@ -1550,5 +1495,5 @@ void SemanticAnalysis::visit_assignment_expression(Node *n) {
         SemanticError::raise(n->get_loc(), "Incompatible types in assignment");
     }
 
-    std::cerr << "Exiting visit_assignment_expression" << std::endl;
+    
 }

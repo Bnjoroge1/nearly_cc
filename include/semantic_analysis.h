@@ -77,6 +77,7 @@ public:
   virtual void visit_literal_value(Node *n);
   virtual void visit_assignment_expression(Node *n);
   virtual void visit_for_statement(Node *n);
+  virtual void visit_if_statement(Node *n);
 private:
   bool is_constant_expression(Node *n);
   int evaluate_constant_expression(Node *n);
@@ -94,10 +95,7 @@ private:
   Node *create_implicit_conversion(Node *n, std::shared_ptr<Type> target_type);
   bool is_assignable(std::shared_ptr<Type> target, std::shared_ptr<Type> source);
   bool is_castable(std::shared_ptr<Type> from, std::shared_ptr<Type> to);
-  
 
-
-  // TODO: add helper functions
 };
 
 #endif // SEMANTIC_ANALYSIS_H
