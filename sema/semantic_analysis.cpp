@@ -1053,7 +1053,61 @@ void SemanticAnalysis::visit_conditional_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_cast_expression(Node *n) {
-  // TODO: implement
+    std::cerr << "Entering visit_cast_expression" << std::endl;
+
+    // Visit the expression being cast
+    Node *expr = n->get_kid(0);
+    visit(expr);
+
+    // Get the type of the expression
+    std::shared_ptr<Type> expr_type = expr->get_type();
+    if (!expr_type) {
+        SemanticError::raise(n->get_loc(), "Expression has no type");
+    }
+
+    // Determine the target type from the cast expression node
+    std::shared_ptr<Type> target_type = n->get_type();
+    if (!target_type) {
+        SemanticError::raise(n->get_loc(), "Cast has no target type");
+    }
+
+    // Check if the cast is valid
+    if (!is_castable(expr_type, target_type)) {
+        SemanticError::raise(n->get_loc(), ("Invalid cast from " + expr_type->as_str() + " to " + target_type->as_str()).c_str());
+    }
+
+    // Annotate the node with the target type
+    n->set_type(target_type);
+
+    std::cerr << "Exiting visit_cast_expression" << std::endl;
+}
+
+// check if a cast is valid
+bool SemanticAnalysis::is_castable(std::shared_ptr<Type> from, std::shared_ptr<Type> to) {
+    // Check if both types are the same
+    if (from->is_same(to.get())) {
+        return true;
+    }
+
+    // Handle casting between numeric types
+    if (from->is_basic() && to->is_basic()) {
+        return true; 
+    }
+
+    // Handle casting between pointers
+    
+
+    // Allow casting from any type to void pointer
+    if (to->is_pointer() && to->get_base_type()->is_void()) {
+        return true;
+    }
+
+    // Allow casting from void pointer to any pointer type
+    if (from->is_pointer() && from->get_base_type()->is_void() && to->is_pointer()) {
+        return true;
+    }
+
+    return false;
 }
 void SemanticAnalysis::visit_for_statement(Node *n) {
 
@@ -1076,7 +1130,7 @@ void SemanticAnalysis::visit_for_statement(Node *n) {
 }
 
 void SemanticAnalysis::visit_function_call_expression(Node *n) {
-    std::cerr << "Entering visit_function_call_expression" << std::endl;
+   
 
     // Visit the function name (should be a variable reference)
     Node *func_ref = n->get_kid(0);
@@ -1093,10 +1147,8 @@ void SemanticAnalysis::visit_function_call_expression(Node *n) {
         SemanticError::raise(func_ref->get_loc(), "Called object is not a function");
     }
 
-    // Get the argument list
     Node *arg_list = n->get_kid(1);
 
-    // Check number of arguments
     if (arg_list->get_num_kids() != func_type->get_num_members()) {
         SemanticError::raise(n->get_loc(), "Incorrect number of arguments");
     }
@@ -1113,8 +1165,7 @@ void SemanticAnalysis::visit_function_call_expression(Node *n) {
         if (!arg_type) {
             SemanticError::raise(arg->get_loc(), "Argument has no type");
         }
-        std::cerr << "param_type: " << param_type->as_str() << std::endl;
-        std::cerr << "arg_type: " << arg_type->as_str() << std::endl;
+        
 
         if (!is_assignable(param_type, arg_type)) {
             SemanticError::raise(arg->get_loc(), 
@@ -1134,10 +1185,7 @@ void SemanticAnalysis::visit_function_call_expression(Node *n) {
     if (return_type->is_void() && n->get_tag() == AST_BINARY_EXPRESSION) {
         SemanticError::raise(n->get_loc(), "Use of void value");
     }
-    
 
-    
-    std::cerr << "Exiting visit_function_call_expression" << std::endl;
 }
 
 void SemanticAnalysis::visit_field_ref_expression(Node *n) {

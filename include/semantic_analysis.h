@@ -93,6 +93,7 @@ private:
   bool is_lvalue(Node *n);
   Node *create_implicit_conversion(Node *n, std::shared_ptr<Type> target_type);
   bool is_assignable(std::shared_ptr<Type> target, std::shared_ptr<Type> source);
+  bool is_castable(std::shared_ptr<Type> from, std::shared_ptr<Type> to);
   
 
 
