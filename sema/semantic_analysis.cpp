@@ -183,6 +183,13 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
   if (kind == BasicTypeKind::CHAR && (kind == BasicTypeKind::LONG || kind == BasicTypeKind::SHORT)) {
     SemanticError::raise(n->get_loc(), "'long' and 'short' cannot be used with 'char'");
   }
+  //set short and long 
+  if(is_short){
+    kind = BasicTypeKind::SHORT;
+  }
+  if(is_long){
+    kind = BasicTypeKind::LONG;
+  }
 
   // Create BasicType
   std::shared_ptr<Type> type = std::make_shared<BasicType>(kind, !is_unsigned);

@@ -1,8 +1,11 @@
-void f(int x) {
-}
-
 int main(void) {
-  int y;
-  y = f(42); // error: use of void value
+  // "short" and "short int" are the same
+  short int si;
+  // "long" and "long int" are the same
+  long int li;
+
+  si = -10;
+  li = -11;
+
   return 0;
 }
