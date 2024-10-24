@@ -577,14 +577,13 @@ void SemanticAnalysis::visit_statement_list(Node *n) {
     // Check if this is a function body by looking at current scope name
     bool is_function_body = false;
     if (m_cur_symtab && m_cur_symtab->get_name().find("function ") == 0) {
+        std::cerr << "is this function body: " << m_cur_symtab->get_name() << std::endl;
         is_function_body = true;
     }
 
-    // Create new scope for non-function statement lists
-    if (!is_function_body) {
-        int line_num = n->get_loc().get_line();
-        m_cur_symtab = enter_scope("block " + std::to_string(line_num));
-    }
+    
+    std::cerr << "is this for Node tag: " << n->get_tag() << std::endl;
+    
 
     // Visit all statements
     for (auto i = n->cbegin(); i != n->cend(); ++i) {
@@ -1055,6 +1054,27 @@ void SemanticAnalysis::visit_conditional_expression(Node *n) {
 
 void SemanticAnalysis::visit_cast_expression(Node *n) {
   // TODO: implement
+}
+void SemanticAnalysis::visit_for_statement(Node *n) {
+    std::cerr << "Entering visit_for_statement" << std::endl;
+
+    // Visit the initialization, condition, and increment expressions
+    if (n->get_num_kids() > 0) visit(n->get_kid(0)); 
+    if (n->get_num_kids() > 1) visit(n->get_kid(1)); 
+    if (n->get_num_kids() > 2) visit(n->get_kid(2)); 
+
+    // new scope for the loop body
+    int line_num = n->get_loc().get_line();
+    SymbolTable *prev_symtab = m_cur_symtab;
+    m_cur_symtab = enter_scope("block 10");
+
+    // Visit the loop body
+    if (n->get_num_kids() > 3) visit(n->get_kid(3)); 
+
+    // Restore the previous scope
+    m_cur_symtab = prev_symtab;
+
+    std::cerr << "Exiting visit_for_statement" << std::endl;
 }
 
 void SemanticAnalysis::visit_function_call_expression(Node *n) {

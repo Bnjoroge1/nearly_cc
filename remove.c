@@ -1,11 +1,15 @@
-int main(void) {
-  // "short" and "short int" are the same
-  short int si;
-  // "long" and "long int" are the same
-  long int li;
+struct Point {
+  int x, y;
+};
 
-  si = -10;
-  li = -11;
+int main(void) {
+  struct Point points[10];
+  int i;
+
+  for (i = 0; i < 10; i = i + 1) {
+    points[i].x = i;
+    points[i].y = i;
+  }
 
   return 0;
 }

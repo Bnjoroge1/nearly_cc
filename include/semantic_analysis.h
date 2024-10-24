@@ -76,6 +76,7 @@ public:
   virtual void visit_variable_ref(Node *n);
   virtual void visit_literal_value(Node *n);
   virtual void visit_assignment_expression(Node *n);
+  virtual void visit_for_statement(Node *n);
 private:
   bool is_constant_expression(Node *n);
   int evaluate_constant_expression(Node *n);
