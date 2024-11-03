@@ -43,6 +43,7 @@ private:
   Symbol *m_symbol; // function symbol table entry
   std::shared_ptr<InstructionSequence> m_hl_iseq; // high-level code
   std::shared_ptr<InstructionSequence> m_ll_iseq; // low-level code
+  unsigned m_total_local_storage;
 
 public:
   //! Constructor.
@@ -79,6 +80,14 @@ public:
   //! Set the low-level InstructionSequence.
   //! @param shared pointer to the low-level InstructionSequence
   void set_ll_iseq(std::shared_ptr<InstructionSequence> ll_iseq);
+
+  //! Set the total local storage size.
+  //! @param size the total local storage size
+  void set_local_storage_size(unsigned size) { m_total_local_storage = size; }
+
+  //! Get the total local storage size.
+  //! @return the total local storage size
+  unsigned get_local_storage_size() const { return m_total_local_storage; }
 
 };
 

@@ -24,7 +24,7 @@ Function::Function(const std::string &name, Node *funcdef_ast, Symbol *symbol)
   : m_name(name)
   , m_funcdef_ast(funcdef_ast)
   , m_symbol(symbol)
-{
+  , m_total_local_storage(0) {
 }
 
 Function::~Function() {

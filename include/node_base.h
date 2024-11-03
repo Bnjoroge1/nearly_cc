@@ -42,6 +42,8 @@ private:
   // TODO: fields (pointer to Type, pointer to Symbol, etc.)
   std::shared_ptr<Type> m_type;
   Symbol *m_symbol;
+  bool m_is_lvalue;
+  LiteralValue m_literal_value;  
 
   // copy ctor and assignment operator not supported
   NodeBase(const NodeBase &);
@@ -54,6 +56,9 @@ public:
   std::shared_ptr<Type> get_type() const;
   void set_symbol(Symbol *symbol);
   Symbol *get_symbol() const;
+
+  void set_literal_value(const LiteralValue &val) { m_literal_value = val; }
+  LiteralValue get_literal_value() const { return m_literal_value; }
 
   // TODO: add member functions
 };

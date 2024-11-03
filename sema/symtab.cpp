@@ -32,7 +32,9 @@ Symbol::Symbol(SymbolKind kind, const std::string &name, std::shared_ptr<Type> t
   : m_kind(kind)
   , m_name(name)
   , m_type(type)
-  , m_symtab(symtab) {
+  , m_symtab(symtab)
+  , m_vreg(-1)
+  , m_offset(-1) {
 }
 
 Symbol::~Symbol() {

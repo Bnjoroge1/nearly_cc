@@ -43,6 +43,9 @@ private:
   std::shared_ptr<Type> m_type;
   SymbolTable *m_symtab;
 
+  int m_vreg;        // virtual register number (if allocated in register)
+  int m_offset;      // offset in memory (if allocated in memory)
+
   // value semantics prohibited
   Symbol(const Symbol &);
   Symbol &operator=(const Symbol &);
@@ -56,6 +59,14 @@ public:
   std::shared_ptr<Type> get_type() const;
   SymbolTable *get_symtab() const;
   void set_symtab(SymbolTable *symtab);
+
+  // Set and get virtual register number
+  void set_vreg(int vreg) { m_vreg = vreg; }
+  int get_vreg() const { return m_vreg; }
+
+  // Set and get offset in memory
+  void set_offset(int offset) { m_offset = offset; }
+  int get_offset() const { return m_offset; }
 };
 
 class SymbolTable {
@@ -84,6 +95,7 @@ public:
   bool has_symbol_local(const std::string &name) const;
   Symbol *lookup_local(const std::string &name) const;
 
+  
   //! Add a symbol table entry.
   //! Will throw SemanticError execption if this symbol table
   //! already has an entry with the same name.

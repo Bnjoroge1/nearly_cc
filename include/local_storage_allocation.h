@@ -24,6 +24,7 @@
 #include "storage.h"
 #include "ast_visitor.h"
 #include "function.h"
+#include <unordered_set>
 
 //! A LocalStorageAllocation object is responsible for allocating local
 //! storage for variables in exactly one function. The `allocate_storage()`
@@ -48,6 +49,8 @@ private:
   StorageCalculator m_storage_calc;
   unsigned m_total_local_storage;
   int m_next_vreg;
+  std::unordered_set<Symbol*> m_address_taken_vars;
+
 
 public:
   LocalStorageAllocation();
@@ -74,6 +77,8 @@ public:
 
   virtual void visit_function_definition(Node *n);
   virtual void visit_statement_list(Node *n);
+  virtual void visit_variable_declaration(Node *n);
+  virtual void visit_unary_expression(Node *n);
   // TODO: override any other AST visitor member functions you need to
 
 private:

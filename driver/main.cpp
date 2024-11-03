@@ -438,6 +438,7 @@ int process_source_file(Options &options, const std::string &filename) {
       // and provide a place to store intermediate representations,
       // storage allocation decisions, etc.
       std::shared_ptr<Function> function(new Function(fn_name, child, fn_sym));
+     
 
       // Generate code!
       next_label_num = codegen(function, options, next_label_num);
