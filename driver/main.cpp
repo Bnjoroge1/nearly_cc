@@ -210,9 +210,9 @@ int codegen(std::shared_ptr<Function> function, const Options &options, int next
   // be allocated a vreg as its storage.
   LocalStorageAllocation local_storage_alloc;
   local_storage_alloc.allocate_storage(function);
-
+  int next_vreg = local_storage_alloc.get_next_vreg();
   // Generate high-level code
-  HighLevelCodegen hl_codegen(options, next_label_num);
+  HighLevelCodegen hl_codegen(options, next_label_num, next_vreg);
   hl_codegen.generate(function);
 
   // Optimizations on high-level IR (if optimizations are enabled)

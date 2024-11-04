@@ -256,17 +256,18 @@ void SemanticAnalysis::visit_pointer_declarator(Node *n) {
     // Create a pointer type based on the current variable type
     m_var_type = std::make_shared<PointerType>(m_var_type);
 
-    // Visit the base declarator 
-    visit(n->get_kid(0));
+    // Visit the base declarator first
+    if (n->get_kid(0)) {
+        visit(n->get_kid(0));
+    }
 
-    
-
-    n->set_str(n->get_kid(0)->get_str());
-
+    // Only try to set string if kid exists and has a string
+    if (n->get_kid(0) && !n->get_kid(0)->get_str().empty()) {
+        n->set_str(n->get_kid(0)->get_str());
+    }
 
     // Set the type of this node
     n->set_type(m_var_type);
-    
 }
 void SemanticAnalysis::visit_array_declarator(Node *n) {
   std::shared_ptr<Type> base_type = m_var_type;
@@ -360,7 +361,9 @@ void SemanticAnalysis::visit_function_definition(Node *n) {
 
   if (!existing_sym) {
     // Add function to global symbol table
-    m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
+    Symbol* sym = m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
+    sym->set_symtab(func_symtab);
+    printf("DEBUG: Added function %s to global symbol table\n", func_name.c_str());
   }
 
   // Set the function type for the current symbol table
@@ -427,6 +430,7 @@ void SemanticAnalysis::visit_function_declaration(Node *n) {
   if (!existing_sym) {
     // Add function to global symbol table
     m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
+
   }
 
   // Set the type of the function declaration node
@@ -925,6 +929,8 @@ void SemanticAnalysis::visit_unary_expression(Node *n) {
         case TOK_AMPERSAND:
             // Address-of operator
             if (is_lvalue(operand)) {
+                // Get the symbol if this is a variable reference
+            
                 n->set_type(std::make_shared<PointerType>(operand_type));
             } else {
                 SemanticError::raise(n->get_loc(), "Cannot take address of non-lvalue");

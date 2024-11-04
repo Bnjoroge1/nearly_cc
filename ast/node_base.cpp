@@ -23,7 +23,7 @@
 #include "type.h"
 
 NodeBase::NodeBase()
-  : m_type(nullptr), m_symbol(nullptr) {
+  : m_type(nullptr), m_symbol(nullptr), m_function(nullptr), m_is_lvalue(false) {
 }
 
 NodeBase::~NodeBase() {

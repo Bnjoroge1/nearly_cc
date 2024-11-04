@@ -26,7 +26,7 @@
 #include "symtab.h"
 #include "literal_value.h"
 #include "has_operand.h"
-
+class Function;
 //! The Node class will inherit from this type, so you can use it
 //! to define any attributes and methods that Node objects should have
 //! (constant value, results of semantic analysis, code generation info,
@@ -44,6 +44,7 @@ private:
   Symbol *m_symbol;
   bool m_is_lvalue;
   LiteralValue m_literal_value;  
+  Function *m_function;
 
   // copy ctor and assignment operator not supported
   NodeBase(const NodeBase &);
@@ -59,7 +60,8 @@ public:
 
   void set_literal_value(const LiteralValue &val) { m_literal_value = val; }
   LiteralValue get_literal_value() const { return m_literal_value; }
-
+  void set_function(Function *function) { m_function = function; }
+  Function *get_function() const { return m_function; }
   // TODO: add member functions
 };
 

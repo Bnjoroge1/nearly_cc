@@ -44,7 +44,11 @@ public:
   //! @param next_label_num the next value that should be used when generating
   //!                       a control-flow label (this is used to ensure that
   //!                       control-flow labels aren't reused between functions)
-  HighLevelCodegen(const Options &options, int next_label_num);
+  //! @param next_vreg the next value that should be used when generating
+  //!                       a virtual register (this is used to ensure that
+  //!                       virtual registers aren't reused between different
+  //!                       variables)
+  HighLevelCodegen(const Options &options, int next_label_num, int next_vreg);
 
   virtual ~HighLevelCodegen();
 

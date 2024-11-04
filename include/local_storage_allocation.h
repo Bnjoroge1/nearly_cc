@@ -79,7 +79,9 @@ public:
   virtual void visit_statement_list(Node *n);
   virtual void visit_variable_declaration(Node *n);
   virtual void visit_unary_expression(Node *n);
+  void find_address_taken_vars(Node *n);
   // TODO: override any other AST visitor member functions you need to
+  int get_next_vreg() const { return m_next_vreg; }
 
 private:
   // TODO: add private member functions

@@ -28,7 +28,6 @@
 #include "options.h"
 #include "symtab.h"
 #include "ast_visitor.h"
-
 class SemanticAnalysis : public ASTVisitor {
 public:
   typedef std::vector<SymbolTable *> SymbolTableList;
@@ -38,7 +37,6 @@ private:
   SymbolTable *m_global_symtab, *m_cur_symtab;
   SymbolTableList m_all_symtabs;
   std::shared_ptr<Type> m_var_type;
-
 
 public:
   SemanticAnalysis(const Options &options);
@@ -85,7 +83,8 @@ private:
   //! @param name the name of the nested scope
   //! @return pointer to the new SymbolTable representing the scope being entered
   SymbolTable *enter_scope(const std::string &name);
-
+  
+ 
   //! Return to the parent of the current scope.
   void leave_scope();
   std::shared_ptr<Type> promote_arithmetic_types(std::shared_ptr<Type> left, std::shared_ptr<Type> right);
