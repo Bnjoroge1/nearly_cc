@@ -120,6 +120,9 @@ unsigned SymbolTable::get_num_parameters() const {
   assert(m_fn_type);
   return m_fn_type->get_num_members();
 }
+bool Symbol::is_local() const {
+  return m_symtab && m_symtab->get_parent() != nullptr;
+}
 
 Symbol *SymbolTable::lookup_recursive(const std::string &name) const {
   const SymbolTable *scope = this;

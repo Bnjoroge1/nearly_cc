@@ -74,7 +74,6 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
   unsigned total_local_storage = 0U;
 
   total_local_storage = m_function->get_local_storage_size();
-  printf("DEBUG: Total local storage: %u\n", total_local_storage);
   
 
 
@@ -84,14 +83,38 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
   for (unsigned i = 0; i < params->get_num_kids(); i++) {
     Node *param = params->get_kid(i);
     Node *declarator = param->get_kid(1);
-    Node *ident = declarator->get_kid(0);
-    std::string param_name = ident->get_str();
+    
+    // Get parameter name based on declarator type
+    std::string param_name;
+    if (declarator->get_tag() == AST_POINTER_DECLARATOR) {
+      // For pointer parameters, get name from base declarator
+      Node *base_declarator = declarator->get_kid(0);
+      param_name = base_declarator->get_kid(0)->get_str();
+    } else if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+      // For array parameters, get name from base declarator
+      Node *base_declarator = declarator->get_kid(0);
+      param_name = base_declarator->get_kid(0)->get_str();
+    } else {
+      // Regular parameter
+      param_name = declarator->get_kid(0)->get_str();
+    }
     
     // Look up parameter's symbol to get its allocated vreg
     Symbol *sym = m_function->get_symbol()->get_symtab()->lookup_local(param_name);
     if (sym) {
+      // Choose mov instruction based on parameter type
+      HighLevelOpcode mov_op;
+      if (sym->get_type()->is_pointer() || 
+          sym->get_type()->is_array() || 
+          declarator->get_tag() == AST_POINTER_DECLARATOR ||
+          declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+        mov_op = HINS_mov_q;  
+      } else {
+        mov_op = HINS_mov_l;  
+      }
+
       // Generate move from argument register (vr1+i) to parameter's allocated storage
-      get_hl_iseq()->append(new Instruction(HINS_mov_l, 
+      get_hl_iseq()->append(new Instruction(mov_op, 
         Operand(Operand::VREG, sym->get_vreg()),           // destination: parameter's vreg
         Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i)  // source: argument register
       ));
@@ -115,13 +138,11 @@ void HighLevelCodegen::visit_statement_list(Node *n) {
 }
 
 void HighLevelCodegen::visit_expression_statement(Node *n) {
-  printf("DEBUG: Entering expression statement\n");
 
   if (n->get_num_kids() > 0) {
     Node *expr = n->get_kid(0);
     if (expr != nullptr) {
       // Visit the expression to generate its code and store result
-      printf("DEBUG: Expression node tag: %d\n", expr->get_tag());
 
       visit(expr);
       
@@ -200,9 +221,55 @@ void HighLevelCodegen::visit_do_while_statement(Node *n) {
 }
 
 void HighLevelCodegen::visit_for_statement(Node *n) {
-  // TODO: implement
+  // Create labels for loop start and end
+  std::string loop_start = ".L" + std::to_string(m_next_label_num++);
+  std::string loop_end = ".L" + std::to_string(m_next_label_num++);
+  
+  // Get the for loop components
+  Node *init = n->get_kid(0);    // Initialization
+  Node *cond = n->get_kid(1);    // Condition
+  Node *update = n->get_kid(2);  // Update expression
+  Node *body = n->get_kid(3);    // Loop body
+  
+  // Generate initialization code
+  if (init) {
+    visit(init);
+  }
+  
+  // Generate jump to condition check
+  get_hl_iseq()->append(new Instruction(HINS_jmp, 
+    Operand(Operand::LABEL, loop_end)));  // Jump to condition check
+  
+  // Start of loop body
+  get_hl_iseq()->define_label(loop_start);
+  
+  // Generate loop body
+  if (body) {
+    visit(body);
+  }
+  
+  // Generate update code
+  if (update) {
+    visit(update);
+  }
+  
+  // Define condition label
+  get_hl_iseq()->define_label(loop_end);
+  
+  // Generate condition code and branch
+  if (cond) {
+    visit(cond);
+    
+    // For comparison operations, the operand should be set by visit_binary_expression
+    Operand cond_result = cond->get_operand();
+    if (cond_result.get_kind() != Operand::NONE) {
+      // Jump back to start if condition is true
+      get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
+        cond_result,
+        Operand(Operand::LABEL, loop_start)));
+    }
+  }
 }
-
 void HighLevelCodegen::visit_if_statement(Node *n) {
   // TODO: implement
 }
@@ -250,7 +317,6 @@ void HighLevelCodegen::visit_unary_expression(Node *n) {
     
     // Create new vreg for result
     int result_vreg = m_next_vreg++;
-    printf("DEBUG: Allocated vreg %d for negation result\n", result_vreg);
     
     // Generate neg instruction
     // Use get_opcode helper to get correct opcode for operand type
@@ -264,9 +330,7 @@ void HighLevelCodegen::visit_unary_expression(Node *n) {
 }
 
 void HighLevelCodegen::visit_binary_expression(Node *n) {
-  printf("DEBUG: Entering binary_expression\n");
   std::string op = n->get_kid(0)->get_str();
-  printf("DEBUG: Binary expression operator: %s\n", op.c_str());
 
   if (op == "=") {
     // Handle assignment
@@ -293,16 +357,12 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
       mov_op = HINS_mov_l;
     }
     
-    printf("DEBUG: Moving value from source to dest\n");
     get_hl_iseq()->append(new Instruction(mov_op, dest, source));
-    printf("DEBUG: Move instruction generated: dest: %s, source: %s\n", 
-           dest, source);
     
     // Assignment expression's value is the assigned value
     n->set_operand(source);
   }
   else if (op == "+") {
-    printf("DEBUG: Current register: %d\n", m_next_vreg);
     visit(n->get_kid(1));
     visit(n->get_kid(2));
     
@@ -311,8 +371,6 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     Operand left = left_node->get_operand();
     Operand right = right_node->get_operand();
     
-    printf("DEBUG: Left operand: %s\n", left);
-    printf("DEBUG: Right operand: %s\n", right);
     
     bool left_is_ptr = left_node->get_type()->is_pointer();
     bool right_is_ptr = right_node->get_type()->is_pointer();
@@ -373,36 +431,61 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
 }
 
 void HighLevelCodegen::visit_function_call_expression(Node *n) {
-  // Get function name and args
-  Node *fn_name = n->get_kid(0);
-  Node *args = n->get_kid(1);
-  std::string fn_name_str = fn_name->get_kid(0)->get_str();
-  printf("DEBUG: Generating call to function: %s\n", fn_name_str.c_str());
+  // Get function name from variable reference
+  Node *func_node = n->get_kid(0);
+  std::string func_name;
+  if (func_node->get_tag() == AST_VARIABLE_REF) {
+    func_name = func_node->get_kid(0)->get_str();
+  } else {
+    func_name = func_node->get_str();
+  }
 
-  
-  // Visit and evaluate each argument
-  std::vector<Operand> arg_operands;
+  // Process arguments
+  Node *args = n->get_kid(1);
   for (unsigned i = 0; i < args->get_num_kids(); i++) {
     Node *arg = args->get_kid(i);
-    visit(arg);
-    arg_operands.push_back(arg->get_operand());
+    visit(arg);  // Generate code for argument expression
+    
+    if (arg->get_tag() == AST_VARIABLE_REF && 
+        arg->get_symbol() && 
+        arg->get_symbol()->get_type()->is_array()) {
+      // For array variables in memory, need to get their address first
+      if (arg->get_symbol()->is_local() && !arg->get_symbol()->has_vreg()) {
+        // Generate localaddr instruction to get array's address
+        int temp_vreg = next_temp_vreg();
+        get_hl_iseq()->append(new Instruction(HINS_localaddr,
+          Operand(Operand::VREG, temp_vreg),
+          Operand(Operand::IMM_IVAL, arg->get_symbol()->get_offset())));
+        
+        // Move array address to argument register
+        get_hl_iseq()->append(new Instruction(HINS_mov_q,
+          Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i),
+          Operand(Operand::VREG, temp_vreg)));
+      }
+    } else {
+      // Handle non-array arguments as before
+      HighLevelOpcode mov_op = arg->get_type()->is_pointer() ? HINS_mov_q : HINS_mov_l;
+      get_hl_iseq()->append(new Instruction(mov_op,
+        Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i),
+        arg->get_operand()));
+    }
   }
-  
-  // Move arguments into argument registers (vr1-vr9)
-  for (unsigned i = 0; i < arg_operands.size(); i++) {
-    int arg_vreg = LocalStorageAllocation::VREG_FIRST_ARG + i;
-    get_hl_iseq()->append(new Instruction(HINS_mov_l, 
-                                        Operand(Operand::VREG, arg_vreg),
-                                        arg_operands[i]));
-  }
-  
-  // Call function
+
+  // Generate call instruction
   get_hl_iseq()->append(new Instruction(HINS_call, 
-                                      Operand(Operand::LABEL, fn_name_str)));
-  
-  // Result will be in vr0
-  n->set_operand(Operand(Operand::VREG, LocalStorageAllocation::VREG_RETVAL));
+    Operand(Operand::LABEL, func_name)));
+
+  // Move return value to a new temporary register
+  int temp_vreg = m_next_vreg++;
+  get_hl_iseq()->append(new Instruction(HINS_mov_l,
+    Operand(Operand::VREG, temp_vreg),
+    Operand(Operand::VREG, LocalStorageAllocation::VREG_RETVAL)));
+    
+  // Set operand for this expression node
+  n->set_operand(Operand(Operand::VREG, temp_vreg));
 }
+
+
 
 void HighLevelCodegen::visit_field_ref_expression(Node *n) {
   // TODO: implement
@@ -413,17 +496,53 @@ void HighLevelCodegen::visit_indirect_field_ref_expression(Node *n) {
 }
 
 void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
-  // TODO: implement
+  // Visit array base expression
+  Node *array = n->get_kid(0);
+  visit(array);
+  
+  // Visit index expression
+  Node *index = n->get_kid(1);
+  visit(index);
+  
+  // Get array's base type size
+  int element_size = array->get_type()->get_base_type()->get_storage_size();
+  
+  // Convert index to 64-bit for address calculation
+  int idx_vreg_64 = m_next_vreg++;
+  get_hl_iseq()->append(new Instruction(HINS_sconv_lq,
+    Operand(Operand::VREG, idx_vreg_64),
+    index->get_operand()));
+  
+  // Multiply index by element size
+  int offset_vreg = m_next_vreg++;
+  get_hl_iseq()->append(new Instruction(HINS_mul_q,
+    Operand(Operand::VREG, offset_vreg),
+    Operand(Operand::VREG, idx_vreg_64),
+    Operand(Operand::IMM_IVAL, element_size)));
+  
+  // Get array base address
+  int base_vreg = m_next_vreg++;
+  get_hl_iseq()->append(new Instruction(HINS_localaddr,
+    Operand(Operand::VREG, base_vreg),
+    Operand(Operand::IMM_IVAL, array->get_symbol()->get_offset())));
+  
+  // Add offset to base address
+  int addr_vreg = m_next_vreg++;
+  get_hl_iseq()->append(new Instruction(HINS_add_q,
+    Operand(Operand::VREG, addr_vreg),
+    Operand(Operand::VREG, base_vreg),
+    Operand(Operand::VREG, offset_vreg)));
+  
+  // Return memory reference through computed address
+  n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
 }
 
 void HighLevelCodegen::visit_variable_ref(Node *n) {
   Symbol *sym = n->get_symbol();
   if (!sym) {
-    printf("DEBUG: No symbol found in variable ref\n");
     return;
   }
   
-  printf("DEBUG: Entering variable_ref for %s\n", sym->get_name().c_str());
   
   // Get the function's symbol table
   SymbolTable* symtab = m_function->get_symbol()->get_symtab();
@@ -433,28 +552,21 @@ void HighLevelCodegen::visit_variable_ref(Node *n) {
     int vreg = stored_sym->get_vreg();
     int offset = stored_sym->get_offset();
         
-    printf("DEBUG: Variable %s: vreg=%d, offset=%d\n", 
-           stored_sym->get_name().c_str(), vreg, offset);
-    
     if (vreg >= 0) {
       // Variable in register
       n->set_operand(Operand(Operand::VREG, vreg));
-      printf("DEBUG: Set operand to vreg %d\n", vreg);
     } else if (offset >= 0) {
       // Variable in memory - need to get its address
       int addr_vreg = m_next_vreg++;
       get_hl_iseq()->append(new Instruction(HINS_localaddr, 
                            Operand(Operand::VREG, addr_vreg),
                            Operand(Operand::IMM_IVAL, offset)));
-      printf("DEBUG: Generated localaddr: vreg=%d, offset=%d\n", addr_vreg, offset);
       
       // For address-taken variables, return the address
       if (stored_sym->get_type()->is_array() || stored_sym->get_type()->is_struct() ) {
         n->set_operand(Operand(Operand::VREG, addr_vreg));
       } else {
         // For regular variables in memory, return a memory reference
-        printf("DEBUG: Variable is in memory, returning memory reference to vreg=%d\n", 
-               addr_vreg);
         n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
       }
     }
@@ -462,8 +574,6 @@ void HighLevelCodegen::visit_variable_ref(Node *n) {
 }
 
 void HighLevelCodegen::visit_literal_value(Node *n) {
-  printf("DEBUG: Entering literal_value\n");
-  printf("DEBUG: Node tag: %d\n", n->get_tag());
   
   if (!n || !n->get_type()) {
     return;
@@ -472,11 +582,9 @@ void HighLevelCodegen::visit_literal_value(Node *n) {
 
   // Get the literal value from the token node
   Node *literal_token = n->get_kid(0);  // Get the TOK_INT_LIT node
-  printf("DEBUG: Literal token: %s\n", literal_token->get_str().c_str());
-  printf("DEBUG: current register: %d\n", m_next_vreg);
+  
   if (literal_token) {
     int val_vreg = m_next_vreg++;
-    printf("DEBUG: New register: %d\n", val_vreg);
     Operand dest(Operand::VREG, val_vreg);
     // Create a new LiteralValue from the token's value
     LiteralValue val = LiteralValue::from_int_literal(literal_token->get_str(), literal_token->get_loc());
@@ -484,8 +592,6 @@ void HighLevelCodegen::visit_literal_value(Node *n) {
     // Set the immediate value operand directly
     get_hl_iseq()->append(new Instruction(HINS_mov_l, dest, 
                         Operand(Operand::IMM_IVAL, val.get_int_value())));
-    printf("DEBUG: Move instruction generated: dest: %s, source: %s\n", 
-           dest, Operand(Operand::IMM_IVAL, val.get_int_value()));
    n->set_operand(dest);
   }
 }

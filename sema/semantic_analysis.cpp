@@ -363,7 +363,6 @@ void SemanticAnalysis::visit_function_definition(Node *n) {
     // Add function to global symbol table
     Symbol* sym = m_global_symtab->add_entry(n->get_loc(), SymbolKind::FUNCTION, func_name, func_type);
     sym->set_symtab(func_symtab);
-    printf("DEBUG: Added function %s to global symbol table\n", func_name.c_str());
   }
 
   // Set the function type for the current symbol table

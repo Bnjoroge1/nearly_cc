@@ -63,6 +63,10 @@ public:
   // Set and get virtual register number
   void set_vreg(int vreg) { m_vreg = vreg; }
   int get_vreg() const { return m_vreg; }
+  //Check if symbol is local (not in global symtab)
+  bool is_local() const;
+  // Check if symbol has a virtual register allocated
+  bool has_vreg() const { return m_vreg != -1; }
 
   // Set and get offset in memory
   void set_offset(int offset) { m_offset = offset; }
