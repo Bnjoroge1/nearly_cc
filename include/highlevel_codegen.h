@@ -91,5 +91,5 @@ private:
   std::string next_label();
   int next_temp_vreg() { return m_next_vreg++; }
 
-  // TODO: additional private member functions
+  
 };

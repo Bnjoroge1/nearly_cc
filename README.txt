@@ -11,3 +11,6 @@ I did not implement support for union_types, and have an issue with variable red
 
 I also added a visit_for_statement method to handle the semantic analysis of for loops, and visit_if_statement to handle semantic analysis of if statements.
 
+
+** Assignment 4 Milestone 1: High-Level Code Generation Implementation ** 
+In this milestone, I implemented high-level code generation focusing on array access and function calls. The key challenge was properly handling array arguments in function calls, where I needed to fix issues with array indexing and parameter passing. I modified the LocalStorageAllocation visitor to properly allocate virtual registers (vr10+ for locals) and memory storage for arrays. The main bug fixes involved correcting array access in the sum function by using the proper base address (parameter 'a' in vr10) rather than an invalid negative offset, and fixing function calls to properly pass array addresses as arguments. In LocalStorageAllocation, I added tracking for address-taken variables and a helper function to find address-taken variables in the AST to avoid double allocation.  

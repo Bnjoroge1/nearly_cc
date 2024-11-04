@@ -239,6 +239,7 @@ void LocalStorageAllocation::visit_variable_declaration(Node *n) {
     
     
     if (needs_memory) {
+    
       // Allocate in memory
       unsigned offset = m_storage_calc.add_field(type);
       sym->set_offset(offset);

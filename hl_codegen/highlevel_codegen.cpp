@@ -207,10 +207,7 @@ void HighLevelCodegen::visit_while_statement(Node *n) {
   // Generate code for condition
   visit(n->get_kid(0));
   Operand cond = n->get_kid(0)->get_operand();
-  
-  
-  
-  
+
   
   get_hl_iseq()->append(new Instruction(HINS_cjmp_t, n->get_kid(0)->get_operand(), 
                                       Operand(Operand::LABEL, body_label)));
@@ -260,7 +257,6 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
   if (cond) {
     visit(cond);
     
-    // For comparison operations, the operand should be set by visit_binary_expression
     Operand cond_result = cond->get_operand();
     if (cond_result.get_kind() != Operand::NONE) {
       // Jump back to start if condition is true
@@ -308,7 +304,6 @@ void HighLevelCodegen::visit_unary_expression(Node *n) {
     Operand ptr = operand->get_operand();
     
     // Create memory reference using pointer value
-    // Use VREG_MEM kind for memory reference through pointer
     n->set_operand(Operand(Operand::VREG_MEM, ptr.get_base_reg()));
   }
   else if (op == "-") {
@@ -319,7 +314,6 @@ void HighLevelCodegen::visit_unary_expression(Node *n) {
     int result_vreg = m_next_vreg++;
     
     // Generate neg instruction
-    // Use get_opcode helper to get correct opcode for operand type
     HighLevelOpcode neg_opcode = get_opcode(HINS_neg_b, operand->get_type());
     get_hl_iseq()->append(new Instruction(neg_opcode,
       Operand(Operand::VREG, result_vreg),
@@ -334,7 +328,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
 
   if (op == "=") {
     // Handle assignment
-    visit(n->get_kid(2));  // Visit right side first
+    visit(n->get_kid(2));  
     Operand source = n->get_kid(2)->get_operand();
     
     // Visit left side (variable)
@@ -350,10 +344,8 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     // Choose correct move instruction based on type
     HighLevelOpcode mov_op;
     if (lhs_is_ptr || rhs_is_ptr) {
-      // Use 64-bit move for pointers
       mov_op = HINS_mov_q;
     } else {
-      // Use regular move for other types
       mov_op = HINS_mov_l;
     }
     
@@ -488,13 +480,69 @@ void HighLevelCodegen::visit_function_call_expression(Node *n) {
 
 
 void HighLevelCodegen::visit_field_ref_expression(Node *n) {
-  // TODO: implement
+  // Visit the struct variable reference
+  Node *struct_ref = n->get_kid(0);
+  visit(struct_ref);
+  
+  // Get field name and struct type
+  std::string field_name = n->get_kid(1)->get_str();
+  std::shared_ptr<Type> struct_type = struct_ref->get_type();
+  
+  // Get field offset within struct
+  int field_offset = struct_type->get_field_offset(field_name);
+  
+  // Get base address of struct
+  Operand struct_loc = struct_ref->get_operand();
+  
+  if (struct_loc.get_kind() == Operand::VREG_MEM) {
+    // If struct is already a memory reference, use its base register
+    int base_vreg = struct_loc.get_base_reg();
+    
+    // Add field offset to create new memory reference
+    n->set_operand(Operand(Operand::VREG_MEM, base_vreg, field_offset));
+  } else {
+    // For struct variables in memory, compute field address
+    int addr_vreg = m_next_vreg++;
+    
+    // Add field offset to struct base address
+    get_hl_iseq()->append(new Instruction(HINS_add_q,
+      Operand(Operand::VREG, addr_vreg),
+      struct_loc,
+      Operand(Operand::IMM_IVAL, field_offset)));
+      
+    n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
+  }
 }
 
 void HighLevelCodegen::visit_indirect_field_ref_expression(Node *n) {
-  // TODO: implement
+  // Visit the pointer expression
+  Node *ptr_expr = n->get_kid(0);
+  visit(ptr_expr);
+  
+  // Get field name and pointed-to struct type
+  std::string field_name = n->get_kid(1)->get_str();
+  std::shared_ptr<Type> struct_type = ptr_expr->get_type()->get_base_type();
+  
+  // Get field offset within struct
+  int field_offset = struct_type->get_field_offset(field_name);
+  
+  // Get pointer value
+  Operand ptr = ptr_expr->get_operand();
+  
+  if (field_offset == 0) {
+    // If field is at start of struct, use pointer directly
+    n->set_operand(Operand(Operand::VREG_MEM, ptr.get_base_reg()));
+  } else {
+    // Add field offset to pointer
+    int addr_vreg = m_next_vreg++;
+    get_hl_iseq()->append(new Instruction(HINS_add_q,
+      Operand(Operand::VREG, addr_vreg),
+      ptr,
+      Operand(Operand::IMM_IVAL, field_offset)));
+      
+    n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
+  }
 }
-
 void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
   // Visit array base expression
   Node *array = n->get_kid(0);
@@ -605,4 +653,3 @@ std::string HighLevelCodegen::next_label() {
   return label;
 }
 
-// TODO: additional private member functions
