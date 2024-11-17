@@ -55,6 +55,7 @@ const char *mreg_operand_names[][4] = {
 const int num_mregs = sizeof(mreg_operand_names) / sizeof(mreg_operand_names[0]);
 
 std::string format_reg(int regnum, int size) {
+  
   assert(regnum >= 0 && regnum < num_mregs);
   assert(size >= BYTE && size <= QUAD);
   return std::string("%") + mreg_operand_names[regnum][size];
@@ -112,6 +113,7 @@ std::string LowLevelFormatter::format_operand(const Operand &operand) const {
 
 std::string LowLevelFormatter::format_instruction(const Instruction *ins) const {
   LowLevelOpcode opcode = LowLevelOpcode(ins->get_opcode());
+  
 
   const char *mnemonic_ptr = lowlevel_opcode_to_str(opcode);
   if (mnemonic_ptr == nullptr)

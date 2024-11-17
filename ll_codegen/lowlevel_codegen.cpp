@@ -113,50 +113,68 @@ void LowLevelCodeGen::generate(std::shared_ptr<Function> function) {
 }
 
 std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::shared_ptr<InstructionSequence> hl_iseq) {
-  std::shared_ptr<InstructionSequence> ll_iseq(new InstructionSequence());
+    std::shared_ptr<InstructionSequence> ll_iseq(new InstructionSequence());
 
-  // The high-level InstructionSequence will have a pointer to the Node
-  // representing the function definition. Useful information could be stored
-  // there (for example, about the amount of memory needed for local storage,
-  // maximum number of virtual registers used, etc.)
-  Node *funcdef_ast = m_function->get_funcdef_ast();
-  assert(funcdef_ast != nullptr);
+    // Ensure the function definition AST is present
+    Node *funcdef_ast = m_function->get_funcdef_ast();
+    assert(funcdef_ast != nullptr);
 
-  // Determine the total number of bytes of memory storage
-  // that the function needs. This should include both variables that
-  // *must* have storage allocated in memory (e.g., arrays), and also
-  // any additional memory that is needed for virtual registers,
-  // spilled machine registers, etc.
-  m_total_memory_storage = 120; // FIXME: determine how much memory storage on the stack is needed
+    // Step 1: Determine the maximum virtual register used
+    int max_vreg = 9;  // Start at 9 since vr0-vr9 are reserved
+    for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
+        Instruction *ins = *it;
+        for (unsigned j = 0; j < ins->get_num_operands(); j++) {
+            Operand op = ins->get_operand(j);
+            if (op.get_kind() == Operand::VREG) {
+                printf("op.get_base_reg(): %d\n", op.get_base_reg());
+                max_vreg = std::max(max_vreg, op.get_base_reg());
+                printf("max_vreg: %d\n", max_vreg);
+            }
+        }
+    }
 
-  // The function prologue will push %rbp, which should guarantee that the
-  // stack pointer (%rsp) will contain an address that is a multiple of 16.
-  // If the total memory storage required is not a multiple of 16, add to
-  // it so that it is.
-  if ((m_total_memory_storage) % 16 != 0)
-    m_total_memory_storage += (16 - (m_total_memory_storage % 16));
+    m_max_vreg = max_vreg;
 
-  // Iterate through high level instructions
-  for (auto i = hl_iseq->cbegin(); i != hl_iseq->cend(); ++i) {
-    Instruction *hl_ins = *i;
+    // Step 2: Calculate storage needed for vregs (vr10 and above)
+    int num_vregs_needing_storage = std::max(m_max_vreg - 9, 0);
+    int vreg_storage = num_vregs_needing_storage * 8;  // 8 bytes per vreg for alignment
 
-    // If the high-level instruction has a label, define an equivalent
-    // label in the low-level instruction sequence
-    if (i.has_label())
-      ll_iseq->define_label(i.get_label());
+    // Step 3: Get local storage size from the Function object
+    int local_storage_size = m_function->get_local_storage_size();
 
-    // Translate the high-level instruction into one or more low-level instructions.
-    // The first generated low-level instruction is annotated with a textual
-    // representation of the high-level instruction.
-    unsigned ll_idx = ll_iseq->get_length();
-    translate_instruction(hl_ins, ll_iseq);
-    HighLevelFormatter hl_formatter;
-    ll_iseq->get_instruction(ll_idx)->set_comment(hl_formatter.format_instruction(hl_ins));
-  }
+    // Step 4: Calculate total storage needed
+    m_total_memory_storage = local_storage_size + vreg_storage;
+    printf("m_total_memory_storage: %d\n", m_total_memory_storage);
+    printf("num_vregs_needing_storage: %d\n", num_vregs_needing_storage);
 
-  return ll_iseq;
+    // Step 5: Align to 16 bytes
+    if (m_total_memory_storage % 16 != 0) {
+        m_total_memory_storage += (16 - (m_total_memory_storage % 16));
+    }
+
+    // Step 6: Determine base offset for vregs
+    m_base_vreg_offset = -8 * num_vregs_needing_storage;
+    printf("m_base_vreg_offset: %d\n", m_base_vreg_offset);
+
+    // Step 7: Translate each high-level instruction to low-level
+    for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
+        Instruction *hl_ins = *it;
+
+        // Define label if present
+        if (it.has_label())
+            ll_iseq->define_label(it.get_label());
+
+        // Translate instruction
+        unsigned ll_idx = ll_iseq->get_length();
+        translate_instruction(hl_ins, ll_iseq);
+        
+        // Annotate with high-level instruction comment
+        HighLevelFormatter hl_formatter;
+        ll_iseq->get_instruction(ll_idx)->set_comment(hl_formatter.format_instruction(hl_ins));
+    }
+
+    return ll_iseq;
 }
-
 // These helper functions are provided to make it easier to handle
 // the way that instructions and operands vary based on operand size
 // ('b'=1 byte, 'w'=2 bytes, 'l'=4 bytes, 'q'=8 bytes.)
@@ -211,7 +229,144 @@ Operand::Kind select_mreg_kind(int operand_size) {
 
 void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr<InstructionSequence> ll_iseq) {
   HighLevelOpcode hl_opcode = HighLevelOpcode(hl_ins->get_opcode());
+   // Handle mov instructions
+    if (match_hl(HINS_mov_b, hl_opcode) || match_hl(HINS_mov_w, hl_opcode) || 
+    match_hl(HINS_mov_l, hl_opcode) || match_hl(HINS_mov_q, hl_opcode)) {
+    int size = highlevel_opcode_get_source_operand_size(hl_opcode);
+    LowLevelOpcode mov_opcode;
+  
+    // Select correct move opcode based on size
+    switch (size) {
+        case 1: mov_opcode = MINS_MOVB; break;
+        case 2: mov_opcode = MINS_MOVW; break;
+        case 4: mov_opcode = MINS_MOVL; break;
+        case 8: mov_opcode = MINS_MOVQ; break;
+        default: RuntimeError::raise("Invalid size for mov instruction");
+    }
+    
+    Operand src = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
+    
+    // Special handling for argument registers (vr1-vr6)
+    if (src.get_kind() == Operand::VREG && src.get_base_reg() >= 1 && src.get_base_reg() <= 6) {
+        // For parameters, we want to use the 32-bit versions of the registers
+        Operand arg_reg(Operand::MREG32, src.get_base_reg());
+        ll_iseq->append(new Instruction(MINS_MOVL, arg_reg, dest));
+        return;
+    }
+    if (src.is_memref() && dest.is_memref()) {
+        // Memory-to-memory moves need an intermediate register
+        Operand::Kind mreg_kind = select_mreg_kind(size);
+        Operand r10(mreg_kind, MREG_R10);
+        
+        // mov src -> r10
+        ll_iseq->append(new Instruction(mov_opcode, src, r10));
+        
+        // mov r10 -> dest
+        ll_iseq->append(new Instruction(mov_opcode, r10, dest));
+    } else {
+        // Direct move
+        ll_iseq->append(new Instruction(mov_opcode, src, dest));
+    }
 
+    
+    return;
+}     if (hl_opcode == HINS_call) {
+    // Extract the function name/label from the operand
+    std::string func_name = hl_ins->get_operand(0).get_label();
+    
+    // Create a label operand for the function
+    Operand func_label(Operand::LABEL, func_name);
+    
+    // Emit the call instruction
+    ll_iseq->append(new Instruction(MINS_CALL, func_label));
+    
+    return;
+}
+      if (hl_opcode == HINS_cjmp_t) {
+    // Operand Structure:
+    // Operand 0: Condition Virtual Register (stores 0 or 1)
+    // Operand 1: Target Label (e.g., .L0)
+
+    // Extract operands
+    Operand condition_vreg = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq); // 32-bit operand
+
+    // **Handle the target label separately**
+    // Assuming hl_ins->get_operand(1) contains the label name as a string
+    std::string label = hl_ins->get_operand(1).get_label(); // Ensure get_label() retrieves the label name
+    Operand target_label(Operand::LABEL, label); // Construct a label operand
+
+    // Create an immediate value operand for 0
+    Operand zero_operand(Operand::IMM_IVAL, 0);
+
+    // 1. Compare the condition register with 0: cmpl $0, condition_vreg
+    ll_iseq->append(new Instruction(MINS_CMPL, zero_operand, condition_vreg));
+
+    // 2. Jump if not equal to 0 (condition is true): jne target_label
+    ll_iseq->append(new Instruction(MINS_JNE, target_label));
+
+    return;
+}
+        if (hl_opcode == HINS_cmplte_l) {
+        // Operand Structure:
+        // Operand 0: Destination Virtual Register (stores 0 or 1)
+        // Operand 1: Left Virtual Register
+        // Operand 2: Right Virtual Register
+
+        // Extract operands
+        Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Destination operand (32-bit)
+        Operand left = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // Left operand (32-bit)
+        Operand right = get_ll_operand(hl_ins->get_operand(2), 4, ll_iseq);  // Right operand (32-bit)
+        
+        // Define temporary registers using MREG_R10
+        // Using Operand::MREG8 to represent %r10b and Operand::MREG32 for %r10d
+        Operand temp_flag(Operand::MREG8, MREG_R10);       // 8-bit register (e.g., %r10b)
+        Operand extended(Operand::MREG32, MREG_R10);  // 32-bit register (e.g., %r10d)
+        
+        // 1. Compare right with left: cmpl right, left
+        // 1. Move left operand into temporary register
+ll_iseq->append(new Instruction(MINS_MOVL, left, extended));
+
+// 2. Compare with right operand: cmpl right, left
+ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
+        Operand extended_flag(Operand::MREG32, MREG_R11);
+        // 2. Set the condition flag based on the comparison: setle %r10b
+        ll_iseq->append(new Instruction(MINS_SETLE, temp_flag));
+        
+        // 3. Zero-extend the condition flag to 32 bits: movzbl %r10b, %r10d
+        ll_iseq->append(new Instruction(MINS_MOVZBL, temp_flag, extended_flag));
+        
+        // 4. Move the extended flag to the destination operand: movl %r10d, dest
+        ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
+        
+        return;
+    }
+    if (hl_opcode == HINS_jmp) {
+      ll_iseq->append(new Instruction(MINS_JMP, hl_ins->get_operand(0)));
+      return;
+    }
+
+    // Handle add instructions
+    if (match_hl(HINS_add_b, hl_opcode)) {
+        int size = highlevel_opcode_get_source_operand_size(hl_opcode);
+        LowLevelOpcode add_opcode = select_ll_opcode(MINS_ADDB, size);
+        
+        Operand src1 = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
+        Operand src2 = get_ll_operand(hl_ins->get_operand(2), size, ll_iseq);
+        Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
+        
+        // Load first operand into r10
+        Operand::Kind mreg_kind = select_mreg_kind(size);
+        Operand r10(mreg_kind, MREG_R10);
+        ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), src1, r10));
+        
+        // Add second operand to r10
+        ll_iseq->append(new Instruction(add_opcode, src2, r10));
+        
+        // Store result
+        ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), r10, dest));
+        return;
+    }
   if (hl_opcode == HINS_enter) {
     // Function prologue: this will create an ABI-compliant stack frame.
     // The local variable area is *below* the address in %rbp, and local storage
@@ -260,3 +415,44 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
 }
 
 // TODO: implement other private member functions
+Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr<InstructionSequence> ll_iseq) {
+    if (hl_op.is_imm_ival()) {
+        return hl_op;  // Immediate values pass through
+    }
+    
+    // **Handle label operands**
+    if (hl_op.is_label() || hl_op.is_imm_label()) {
+        return hl_op; // Pass through as label operands
+    }
+
+    int vreg_num = hl_op.get_base_reg();
+    printf("vreg_num: %d\n", vreg_num);
+    
+    // Handle vr0 (return register)
+    if (vreg_num == 0) {
+        // Map vr0 to %rax or its sub-register based on size
+        printf("Mapping vr0 to %rax\n");
+        return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RAX);
+    }
+    
+    // Handle vr1 - vr6 (argument registers)
+    if (vreg_num >=1 && vreg_num <=6) {
+        // Mapping vr1 - vr6 to %rdi, %rsi, %rdx, %rcx, %r8, %r9 respectively
+        return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RDI + (vreg_num -1));
+    }
+    
+    // Handle vr10 and above (memory)
+    if (vreg_num >=10) {
+        int offset = m_base_vreg_offset + 8 * (vreg_num - 10);  // 8 bytes per vreg for alignment
+        printf("Mapping vr%d to offset %d(%s)\n", vreg_num, offset, "rbp");
+        assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
+        
+        // Correct the order of parameters: base_reg first, then offset
+        Operand mem_operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+        printf("Created memory operand: kind=%d, base_reg=%d, offset=%d\n", mem_operand.get_kind(), mem_operand.get_base_reg(), mem_operand.get_offset());
+        return mem_operand;
+    }
+    
+    // If vr_num does not fit expected categories, raise an error
+    RuntimeError::raise("Invalid virtual register number: vr%d", vreg_num);
+}

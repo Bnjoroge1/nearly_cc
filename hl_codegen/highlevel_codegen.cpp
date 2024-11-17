@@ -86,17 +86,11 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
     
     // Get parameter name based on declarator type
     std::string param_name;
-    if (declarator->get_tag() == AST_POINTER_DECLARATOR) {
-      // For pointer parameters, get name from base declarator
-      Node *base_declarator = declarator->get_kid(0);
-      param_name = base_declarator->get_kid(0)->get_str();
-    } else if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
-      // For array parameters, get name from base declarator
-      Node *base_declarator = declarator->get_kid(0);
-      param_name = base_declarator->get_kid(0)->get_str();
-    } else {
-      // Regular parameter
+    if (declarator->get_tag() == AST_POINTER_DECLARATOR || declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+      // Pointer or array parameter
       param_name = declarator->get_kid(0)->get_str();
+    } else {
+      param_name = declarator->get_str();
     }
     
     // Look up parameter's symbol to get its allocated vreg
@@ -211,7 +205,7 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
   // Create labels for loop start and condition
   std::string loop_start = next_label();  // Loop body
   std::string loop_cond = next_label();   // Condition check
-  
+  std::string loop_end = m_return_label_name;
   Node *init = n->get_kid(0);
   Node *cond = n->get_kid(1);
   Node *update = n->get_kid(2);
@@ -253,14 +247,93 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
         cond_result,
         Operand(Operand::LABEL, loop_start)));
     }
+    
   }
+  //jump to return label
+  get_hl_iseq()->append(new Instruction(HINS_jmp, Operand(Operand::LABEL, loop_end)));
+  
+ 
 }
 void HighLevelCodegen::visit_if_statement(Node *n) {
-  // TODO: implement
+    // Create labels for then block and end
+    std::string then_label = next_label();
+    std::string end_label = next_label();
+    
+    // Visit condition
+    Node *cond = n->get_kid(0);
+    Node *then_block = n->get_kid(1);
+    
+    if (cond) {
+        visit(cond);
+        Operand cond_result = cond->get_operand();
+        
+        // Conditional jump to then block if condition is true
+        if (cond_result.get_kind() != Operand::NONE) {
+            get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
+                cond_result,
+                Operand(Operand::LABEL, then_label)));
+        }
+    }
+    
+    // Jump to end if condition is false
+    get_hl_iseq()->append(new Instruction(HINS_jmp,
+        Operand(Operand::LABEL, end_label)));
+    
+    // Then block
+    get_hl_iseq()->define_label(then_label);
+    if (then_block) {
+        visit(then_block);
+    }
+    
+    // End label
+    get_hl_iseq()->define_label(end_label);
 }
 
 void HighLevelCodegen::visit_if_else_statement(Node *n) {
-  // TODO: implement
+    // Create labels for then block, else block, and end
+    std::string then_label = next_label();
+    std::string else_label = next_label();
+    std::string end_label = next_label();
+    
+    // Visit condition
+    Node *cond = n->get_kid(0);
+    Node *then_block = n->get_kid(1);
+    Node *else_block = n->get_kid(2);
+    
+    if (cond) {
+        visit(cond);
+        Operand cond_result = cond->get_operand();
+        
+        // Conditional jump to then block if condition is true
+        if (cond_result.get_kind() != Operand::NONE) {
+            get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
+                cond_result,
+                Operand(Operand::LABEL, then_label)));
+        }
+    }
+    
+    // Jump to else block if condition is false
+    get_hl_iseq()->append(new Instruction(HINS_jmp,
+        Operand(Operand::LABEL, else_label)));
+    
+    // Then block
+    get_hl_iseq()->define_label(then_label);
+    if (then_block) {
+        visit(then_block);
+    }
+    
+    // Jump to end after then block
+    get_hl_iseq()->append(new Instruction(HINS_jmp,
+        Operand(Operand::LABEL, end_label)));
+    
+    // Else block
+    get_hl_iseq()->define_label(else_label);
+    if (else_block) {
+        visit(else_block);
+    }
+    
+    // End label
+    get_hl_iseq()->define_label(end_label);
 }
 
 
@@ -317,29 +390,31 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
   printf("first kid for binary expression: %s\n", n->get_kid(0)->get_str().c_str());
 
   if (op == "=") {
-    // Handle source assignment
-    visit(n->get_kid(2));  
-    Operand source = n->get_kid(2)->get_operand();
+    // Handle destination assignment
+    Node *lhs = n->get_kid(1);
+    printf("lhs node for =: %s\n", lhs->get_str().c_str());
+    visit(lhs);
+    Operand dest = lhs->get_operand();
     
-    // Visit left side (destination)
-    visit(n->get_kid(1));
-    Operand dest = n->get_kid(1)->get_operand();
-    
-    // Get types for pointer assignment checks
-    Node* lhs = n->get_kid(1);
-    Node* rhs = n->get_kid(2);
+    // Visit right side (source)
+    Node *rhs = n->get_kid(2);
+    printf("rhs node for =: %s\n", rhs->get_str().c_str());
+    visit(rhs);
+    Operand source = rhs->get_operand();
     HighLevelOpcode mov_op;
     if (lhs->get_type()->is_pointer() || rhs->get_type()->is_pointer() || 
         lhs->get_type()->is_array() || rhs->get_type()->is_array()) {
       mov_op = HINS_mov_q;  // Use 64-bit move for pointers/arrays
     } else {
+      printf("using mov_l for = expression\n");
       mov_op = HINS_mov_l;  // Use 32-bit move for integers
     }
     
     get_hl_iseq()->append(new Instruction(mov_op, dest, source));
     
     // Assignment expression's value is the assigned value
-    n->set_operand(source);
+    n->set_operand(dest);
+    return;
   }
   else  if (op == "<") {
     // Visit operands
@@ -402,8 +477,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     Operand left = left_node->get_operand();
     Operand right = right_node->get_operand();
     
-    printf("left op for +: %s\n", left_node->get_str().c_str());
-    printf("right op for +: %s\n", right_node->get_str().c_str());
+    
     
     bool left_is_ptr = left_node->get_type()->is_pointer();
     bool right_is_ptr = right_node->get_type()->is_pointer();
@@ -723,10 +797,7 @@ void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
 
     if (array_base.get_kind() == Operand::VREG_MEM) {
         //  VREG_MEM_OFF with an offset of 0 instead of VREG_MEM
-        n->set_operand(Operand(Operand::VREG_MEM_OFF, array_base.get_base_reg(), 0));
-        array_base = n->get_operand();
-    } else if (array_base.get_kind() == Operand::VREG) {
-        // If it's a VREG, convert it to VREG_MEM_OFF with offset 0
+        printf("array base is a VREG_MEM\n");
         n->set_operand(Operand(Operand::VREG_MEM_OFF, array_base.get_base_reg(), 0));
         array_base = n->get_operand();
     }
@@ -755,8 +826,8 @@ void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
         array_base,
         Operand(Operand::VREG, offset_vreg)));
     
-    // Set as memory reference using VREG_MEM_OFF with offset 0
-    n->set_operand(Operand(Operand::VREG_MEM_OFF, addr_vreg, 0));
+    // Set as memory reference using VREG_MEM
+    n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
 }
 void HighLevelCodegen::visit_variable_ref(Node *n) {
   Symbol *sym = n->get_symbol();

@@ -36,6 +36,8 @@
 //! low-level (x86-64) instructions.
 class LowLevelCodeGen {
 private:
+  int m_max_vreg;
+  int m_base_vreg_offset;
   const Options &m_options;
   std::shared_ptr<Function> m_function;
   int m_total_memory_storage;
