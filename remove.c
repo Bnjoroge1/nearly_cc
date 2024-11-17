@@ -1,15 +1,10 @@
+// test integer input
+
+int read_i32(void);
+
 int main(void) {
-  int a, b, c;
-
-  a = 2;
-  b = 3;
-  c = 0;
-
-  if (a + 2 == b) {
-    c = 1;
-  } else {
-    c = 2;
-  }
-
-  return c;
+  int x, y;
+  x = read_i32();
+  y = read_i32();
+  return x + y;
 }

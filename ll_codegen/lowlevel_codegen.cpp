@@ -126,9 +126,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
         for (unsigned j = 0; j < ins->get_num_operands(); j++) {
             Operand op = ins->get_operand(j);
             if (op.get_kind() == Operand::VREG) {
-                printf("op.get_base_reg(): %d\n", op.get_base_reg());
                 max_vreg = std::max(max_vreg, op.get_base_reg());
-                printf("max_vreg: %d\n", max_vreg);
             }
         }
     }
@@ -144,8 +142,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
 
     // Step 4: Calculate total storage needed
     m_total_memory_storage = local_storage_size + vreg_storage;
-    printf("m_total_memory_storage: %d\n", m_total_memory_storage);
-    printf("num_vregs_needing_storage: %d\n", num_vregs_needing_storage);
+  
 
     // Step 5: Align to 16 bytes
     if (m_total_memory_storage % 16 != 0) {
@@ -154,7 +151,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
 
     // Step 6: Determine base offset for vregs
     m_base_vreg_offset = -8 * num_vregs_needing_storage;
-    printf("m_base_vreg_offset: %d\n", m_base_vreg_offset);
+    
 
     // Step 7: Translate each high-level instruction to low-level
     for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
@@ -249,7 +246,7 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     // Special handling for argument registers (vr1-vr6)
     if (src.get_kind() == Operand::VREG && src.get_base_reg() >= 1 && src.get_base_reg() <= 6) {
         // Map vr1-vr6 to their corresponding argument registers
-        printf("handling argument registers\n");
+        
         MachineReg arg_reg;
         switch(src.get_base_reg()) {
             case 1: arg_reg = MREG_RDI; break;
@@ -482,12 +479,12 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     }
 
     int vreg_num = hl_op.get_base_reg();
-    printf("vreg_num: %d\n", vreg_num);
+  
     
     // Handle vr0 (return register)
     if (vreg_num == 0) {
         // Map vr0 to %rax or its sub-register based on size
-        printf("Mapping vr0 to %rax\n");
+    
         return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RAX);
     }
     
@@ -500,12 +497,12 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     // Handle vr10 and above (memory)
     if (vreg_num >=10) {
         int offset = m_base_vreg_offset + 8 * (vreg_num - 10);  // 8 bytes per vreg for alignment
-        printf("Mapping vr%d to offset %d(%s)\n", vreg_num, offset, "rbp");
+ 
         assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
         
         // Correct the order of parameters: base_reg first, then offset
         Operand mem_operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
-        printf("Created memory operand: kind=%d, base_reg=%d, offset=%d\n", mem_operand.get_kind(), mem_operand.get_base_reg(), mem_operand.get_offset());
+     
         return mem_operand;
     }
     

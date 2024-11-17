@@ -105,11 +105,11 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
         mov_op = HINS_mov_q;  
       } else {
         mov_op = HINS_mov_l; 
-        printf("using mov_l for parameter\n");  
+         
       }
 
       // Generate move from argument register (vr1+i) to parameter's allocated storage
-      printf("appending mov instruction to source: %d and destination: %d\n", LocalStorageAllocation::VREG_FIRST_ARG + i, sym->get_vreg());
+     
       get_hl_iseq()->append(new Instruction(mov_op, 
         Operand(Operand::VREG, sym->get_vreg()),           // destination: parameter's vreg
         Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i)  // source: argument register
@@ -163,9 +163,9 @@ void HighLevelCodegen::visit_return_statement(Node *n) {
 void HighLevelCodegen::visit_return_expression_statement(Node *n) {
     // Visit the return expression first
     visit(n->get_kid(0));
-    printf("num kids: %d\n", n->get_num_kids());
+   
     // Move result into vr0 (return value register)
-    printf("n->get_kid(0)->get_operand(): %s\n", n->get_kid(0)->get_operand());
+   
     get_hl_iseq()->append(new Instruction(HINS_mov_l,
         Operand(Operand::VREG, 0),  // vr0
         n->get_kid(0)->get_operand()));
@@ -212,10 +212,7 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
   Node *cond = n->get_kid(1);
   Node *update = n->get_kid(2);
   Node *body = n->get_kid(3);
-  printf("init: %s\n", init->get_str().c_str());
-  printf("cond: %s\n", cond->get_str().c_str());
-  printf("update: %s\n", update->get_str().c_str());
-  printf("body: %s\n", body->get_str().c_str());
+
   
   // Generate initialization
   if (init) {
@@ -262,8 +259,7 @@ void HighLevelCodegen::visit_if_statement(Node *n) {
     // Visit condition
     Node *cond = n->get_kid(0);
     Node *then_block = n->get_kid(1);
-    printf("then block: %s\n", then_block);
-    printf("cond: %s\n", cond->get_str().c_str());
+  
     if (cond) {
         visit(cond);  // This will generate the comparison code
         Operand cond_result = cond->get_operand();
@@ -374,18 +370,18 @@ void HighLevelCodegen::visit_unary_expression(Node *n) {
 
 void HighLevelCodegen::visit_binary_expression(Node *n) {
   std::string op = n->get_kid(0)->get_str();
-  printf("first kid for binary expression: %s\n", n->get_kid(0)->get_str().c_str());
+ 
 
   if (op == "=") {
     // Handle destination assignment
     Node *lhs = n->get_kid(1);
-    printf("lhs node for =: %s\n", lhs->get_str().c_str());
+    
     visit(lhs);
     Operand dest = lhs->get_operand();
     
     // Visit right side (source)
     Node *rhs = n->get_kid(2);
-    printf("rhs node for =: %s\n", rhs->get_str().c_str());
+   
     visit(rhs);
     Operand source = rhs->get_operand();
     HighLevelOpcode mov_op;
@@ -393,7 +389,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
         lhs->get_type()->is_array() || rhs->get_type()->is_array()) {
       mov_op = HINS_mov_q;  // Use 64-bit move for pointers/arrays
     } else {
-      printf("using mov_l for = expression\n");
+    
       mov_op = HINS_mov_l;  // Use 32-bit move for integers
     }
     
@@ -449,16 +445,13 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     n->set_operand(result);
 }
   else if (op == "+") {
-    printf("visiting + expression\n");
+   
     visit(n->get_kid(1));
     visit(n->get_kid(2));
-    printf("left for +: %s\n", n->get_kid(1));
-    printf("right for +: %s\n", n->get_kid(2)->get_str().c_str());
-    
+   
     Node* left_node = n->get_kid(1);
     Node* right_node = n->get_kid(2);
-    printf("left node kind: %d\n", left_node->get_tag());
-    printf("right node kind: %d\n", right_node->get_tag());
+
     // Make sure operands are valid before using them
     
     Operand left = left_node->get_operand();
@@ -518,12 +511,10 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
   }
   else if (op == "==") {
         // Visit left and right operands
-        printf("visiting == expression\n");
+    
         visit(n->get_kid(1));
         visit(n->get_kid(2));
         
-        printf("left for ==: %s\n", n->get_kid(1)->get_str().c_str());
-        printf("right for ==: %s\n", n->get_kid(2)->get_str().c_str());
 
         
         // Get operands
@@ -543,7 +534,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
         return;
     
   }else if (op == "*") {
-    printf("visiting * expression\n");
+  
     visit(n->get_kid(1));
     visit(n->get_kid(2));
     
@@ -588,8 +579,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
       Node* right_node = n->get_kid(2);
       Operand left = left_node->get_operand();
       Operand right = right_node->get_operand();
-      printf("left for -: %s\n", left_node->get_str().c_str());
-      printf("right for -: %s\n", right_node->get_str().c_str());
+   
       bool left_is_ptr = left_node->get_type()->is_pointer();
       bool right_is_ptr = right_node->get_type()->is_pointer();
       
@@ -620,11 +610,11 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
                   Operand(Operand::VREG, scaled_vreg)));
           }
       } else {
-          printf("regular integer subtraction\n");
+         
           // Regular integer subtraction
           get_hl_iseq()->append(new Instruction(HINS_sub_l, result, left, right));
       }
-      printf("setting result for -\n");
+     
       n->set_operand(result);
   }
 
@@ -656,7 +646,7 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
 }
 
 void HighLevelCodegen::visit_function_call_expression(Node *n) {
-  printf("visiting function call expression\n");
+  
   // Get function name from variable reference
   Node *func_node = n->get_kid(0);
   std::string func_name;
@@ -665,10 +655,7 @@ void HighLevelCodegen::visit_function_call_expression(Node *n) {
   } else {
     func_name = func_node->get_str();
   }
-  printf("func_name: %s\n", func_name.c_str());
-  printf("visiting arguments\n");
-  printf("n->get_num_kids(): %d\n", n->get_num_kids());
-  
+
 
   // Process arguments
 // Process arguments
@@ -790,28 +777,26 @@ void HighLevelCodegen::visit_indirect_field_ref_expression(Node *n) {
   }
 }
 void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
-    printf("visiting array element ref expression\n");
+
     
     // Visit array base expression
     Node *array = n->get_kid(0);
     visit(array);
-    printf("array: %s\n", array->get_str().c_str());
-    
+   
     // Visit index expression
     Node *index = n->get_kid(1);
     visit(index);
-    printf("index: %s\n", index->get_str().c_str());
-    
+     
     Operand index_op = index->get_operand();
-    printf("Index operand kind: %d\n", index_op.get_kind());
+   
     
     // Get array base address
     Operand array_base = array->get_operand();
-    printf("Array base operand kind: %d\n", array_base.get_kind());
+   
 
     if (array_base.get_kind() == Operand::VREG_MEM) {
         //  VREG_MEM_OFF with an offset of 0 instead of VREG_MEM
-        printf("array base is a VREG_MEM\n");
+       
         n->set_operand(Operand(Operand::VREG_MEM_OFF, array_base.get_base_reg(), 0));
         array_base = n->get_operand();
     }
