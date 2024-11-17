@@ -246,15 +246,27 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     
     Operand src = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
     Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
-    
     // Special handling for argument registers (vr1-vr6)
     if (src.get_kind() == Operand::VREG && src.get_base_reg() >= 1 && src.get_base_reg() <= 6) {
-        // For parameters, we want to use the 32-bit versions of the registers
-        Operand arg_reg(Operand::MREG32, src.get_base_reg());
-        ll_iseq->append(new Instruction(MINS_MOVL, arg_reg, dest));
+        // Map vr1-vr6 to their corresponding argument registers
+        printf("handling argument registers\n");
+        MachineReg arg_reg;
+        switch(src.get_base_reg()) {
+            case 1: arg_reg = MREG_RDI; break;
+            case 2: arg_reg = MREG_RSI; break;
+            case 3: arg_reg = MREG_RDX; break;
+            case 4: arg_reg = MREG_RCX; break;
+            case 5: arg_reg = MREG_R8; break;
+            case 6: arg_reg = MREG_R9; break;
+            default: RuntimeError::raise("Invalid argument register");
+        }
+        // Use 32-bit version of the register for int parameters
+        Operand arg_reg_op(Operand::MREG32, arg_reg);
+        ll_iseq->append(new Instruction(mov_opcode, dest, arg_reg_op));
         return;
     }
-    if (src.is_memref() && dest.is_memref()) {
+    
+    if (src.is_memref() && dest.is_memref() ) {
         // Memory-to-memory moves need an intermediate register
         Operand::Kind mreg_kind = select_mreg_kind(size);
         Operand r10(mreg_kind, MREG_R10);
@@ -280,6 +292,32 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     
     // Emit the call instruction
     ll_iseq->append(new Instruction(MINS_CALL, func_label));
+    
+    return;
+}   if (hl_opcode == HINS_cmpeq_l) {
+    // Extract operands
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Result (32-bit)
+    Operand left = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // Left operand
+    Operand right = get_ll_operand(hl_ins->get_operand(2), 4, ll_iseq);  // Right operand
+    
+    // Define temporary registers
+    Operand temp_flag(Operand::MREG8, MREG_R10);      // 8-bit for sete
+    Operand extended_flag(Operand::MREG32, MREG_R11); // 32-bit for final result
+    Operand extended_flag1(Operand::MREG32, MREG_R10); // 32-bit for final result
+    // 1. Move left operand to temporary register
+    ll_iseq->append(new Instruction(MINS_MOVL, left, extended_flag1));
+    
+    // 2. Compare with right operand
+    ll_iseq->append(new Instruction(MINS_CMPL, right, extended_flag1));
+    
+    // 3. Set byte based on equality
+    ll_iseq->append(new Instruction(MINS_SETE, temp_flag));
+  
+    // 4. Zero-extend the result to 32 bits
+    ll_iseq->append(new Instruction(MINS_MOVZBL, temp_flag, extended_flag));
+    
+    // 5. Move to destination
+    ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
     
     return;
 }
@@ -340,7 +378,25 @@ ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
         ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
         
         return;
-    }
+    }if (hl_opcode == HINS_cjmp_f) {
+    // Extract operands
+    Operand condition_vreg = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq); // 32-bit operand
+    
+    // Handle the target label
+    std::string label = hl_ins->get_operand(1).get_label();
+    Operand target_label(Operand::LABEL, label);
+    
+    // Create immediate value operand for 0
+    Operand zero_operand(Operand::IMM_IVAL, 0);
+    
+    // Compare the condition register with 0
+    ll_iseq->append(new Instruction(MINS_CMPL, zero_operand, condition_vreg));
+    
+    // Jump if equal to 0 (condition is false)
+    ll_iseq->append(new Instruction(MINS_JE, target_label));
+    
+    return;
+}
     if (hl_opcode == HINS_jmp) {
       ll_iseq->append(new Instruction(MINS_JMP, hl_ins->get_operand(0)));
       return;

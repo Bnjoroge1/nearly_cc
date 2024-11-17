@@ -80,19 +80,19 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
   get_hl_iseq()->append(new Instruction(HINS_enter, Operand(Operand::IMM_IVAL, total_local_storage)));
   // Handle parameters - copy from argument registers to allocated storage
   Node *params = n->get_kid(2);  // parameter list
+  
   for (unsigned i = 0; i < params->get_num_kids(); i++) {
     Node *param = params->get_kid(i);
     Node *declarator = param->get_kid(1);
     
     // Get parameter name based on declarator type
     std::string param_name;
-    if (declarator->get_tag() == AST_POINTER_DECLARATOR || declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+    if (declarator->get_tag() == AST_POINTER_DECLARATOR || declarator->get_tag() == AST_ARRAY_DECLARATOR || declarator->get_tag() == AST_NAMED_DECLARATOR) {
       // Pointer or array parameter
       param_name = declarator->get_kid(0)->get_str();
     } else {
       param_name = declarator->get_str();
     }
-    
     // Look up parameter's symbol to get its allocated vreg
     Symbol *sym = m_function->get_symbol()->get_symtab()->lookup_local(param_name);
     if (sym) {
@@ -104,10 +104,12 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
           declarator->get_tag() == AST_ARRAY_DECLARATOR) {
         mov_op = HINS_mov_q;  
       } else {
-        mov_op = HINS_mov_l;  
+        mov_op = HINS_mov_l; 
+        printf("using mov_l for parameter\n");  
       }
 
       // Generate move from argument register (vr1+i) to parameter's allocated storage
+      printf("appending mov instruction to source: %d and destination: %d\n", LocalStorageAllocation::VREG_FIRST_ARG + i, sym->get_vreg());
       get_hl_iseq()->append(new Instruction(mov_op, 
         Operand(Operand::VREG, sym->get_vreg()),           // destination: parameter's vreg
         Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i)  // source: argument register
@@ -255,32 +257,26 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
  
 }
 void HighLevelCodegen::visit_if_statement(Node *n) {
-    // Create labels for then block and end
-    std::string then_label = next_label();
     std::string end_label = next_label();
     
     // Visit condition
     Node *cond = n->get_kid(0);
     Node *then_block = n->get_kid(1);
-    
+    printf("then block: %s\n", then_block);
+    printf("cond: %s\n", cond->get_str().c_str());
     if (cond) {
-        visit(cond);
+        visit(cond);  // This will generate the comparison code
         Operand cond_result = cond->get_operand();
         
-        // Conditional jump to then block if condition is true
+        // Jump to end if condition is false
         if (cond_result.get_kind() != Operand::NONE) {
-            get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
+            get_hl_iseq()->append(new Instruction(HINS_cjmp_f,
                 cond_result,
-                Operand(Operand::LABEL, then_label)));
+                Operand(Operand::LABEL, end_label)));
         }
     }
     
-    // Jump to end if condition is false
-    get_hl_iseq()->append(new Instruction(HINS_jmp,
-        Operand(Operand::LABEL, end_label)));
-    
     // Then block
-    get_hl_iseq()->define_label(then_label);
     if (then_block) {
         visit(then_block);
     }
@@ -290,10 +286,8 @@ void HighLevelCodegen::visit_if_statement(Node *n) {
 }
 
 void HighLevelCodegen::visit_if_else_statement(Node *n) {
-    // Create labels for then block, else block, and end
-    std::string then_label = next_label();
-    std::string else_label = next_label();
-    std::string end_label = next_label();
+    std::string else_label = next_label();  // L1
+    std::string end_label = next_label();   // L0
     
     // Visit condition
     Node *cond = n->get_kid(0);
@@ -304,20 +298,15 @@ void HighLevelCodegen::visit_if_else_statement(Node *n) {
         visit(cond);
         Operand cond_result = cond->get_operand();
         
-        // Conditional jump to then block if condition is true
+        // Jump to else block if condition is false
         if (cond_result.get_kind() != Operand::NONE) {
-            get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
+            get_hl_iseq()->append(new Instruction(HINS_cjmp_f,
                 cond_result,
-                Operand(Operand::LABEL, then_label)));
+                Operand(Operand::LABEL, else_label)));
         }
     }
     
-    // Jump to else block if condition is false
-    get_hl_iseq()->append(new Instruction(HINS_jmp,
-        Operand(Operand::LABEL, else_label)));
-    
     // Then block
-    get_hl_iseq()->define_label(then_label);
     if (then_block) {
         visit(then_block);
     }
@@ -335,8 +324,6 @@ void HighLevelCodegen::visit_if_else_statement(Node *n) {
     // End label
     get_hl_iseq()->define_label(end_label);
 }
-
-
 void HighLevelCodegen::visit_unary_expression(Node *n) {
   std::string op = n->get_kid(0)->get_str();
   Node *operand = n->get_kid(1);
@@ -524,10 +511,37 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     }
     
     
-    // Now do addition with register operands
+    // addition with register operands
     get_hl_iseq()->append(new Instruction(HINS_add_l, result, left_val, right_val));
     n->set_operand(result);
   }
+  }
+  else if (op == "==") {
+        // Visit left and right operands
+        printf("visiting == expression\n");
+        visit(n->get_kid(1));
+        visit(n->get_kid(2));
+        
+        printf("left for ==: %s\n", n->get_kid(1)->get_str().c_str());
+        printf("right for ==: %s\n", n->get_kid(2)->get_str().c_str());
+
+        
+        // Get operands
+        Operand left = n->get_kid(1)->get_operand();
+        Operand right = n->get_kid(2)->get_operand();
+        
+        // Create result vreg
+        int result_vreg = m_next_vreg++;
+        Operand result(Operand::VREG, result_vreg);
+        
+        // Generate comparison instruction
+        get_hl_iseq()->append(new Instruction(HINS_cmpeq_l, 
+            result, left, right));
+            
+        // Set the result operand
+        n->set_operand(result);
+        return;
+    
   }else if (op == "*") {
     printf("visiting * expression\n");
     visit(n->get_kid(1));

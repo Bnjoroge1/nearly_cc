@@ -1,13 +1,15 @@
-int sum(int a, int b) {
-  int result;
-  result = a + b;
-  return result;
-}
-
 int main(void) {
-  int x, y, z;
-  x = 2;
-  y = 3;
-  z = sum(x, y);
-  return z;
+  int a, b, c;
+
+  a = 2;
+  b = 3;
+  c = 0;
+
+  if (a + 2 == b) {
+    c = 1;
+  } else {
+    c = 2;
+  }
+
+  return c;
 }

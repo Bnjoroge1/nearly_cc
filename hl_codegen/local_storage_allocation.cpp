@@ -95,6 +95,7 @@ void LocalStorageAllocation::visit_function_definition(Node *n) {
   
   // Handle parameters (kid(2) is parameter list)
   Node *params = n->get_kid(2);
+  int arg_reg = VREG_FIRST_ARG;
 
   for (unsigned i = 0; i < params->get_num_kids(); i++) {
     Node *param = params->get_kid(i);
@@ -123,6 +124,7 @@ void LocalStorageAllocation::visit_function_definition(Node *n) {
     if (name_node) {
       param_name = name_node->get_str();
       Symbol *sym = symtab->lookup_local(param_name);
+      printf("sym exists: %d\n", sym != nullptr);
 
       if (sym) {
         // Both pointer and array parameters are handled as pointers
@@ -132,8 +134,11 @@ void LocalStorageAllocation::visit_function_definition(Node *n) {
             declarator->get_tag() == AST_ARRAY_DECLARATOR) {
           // Use mov_q for pointer/array parameters
           sym->set_vreg(m_next_vreg++);
+          
         } else {
           // Regular parameter
+          
+          
           sym->set_vreg(m_next_vreg++);
         }
       } else {
