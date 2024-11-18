@@ -249,6 +249,8 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
     
   }
   //jump to return label
+
+  //print return value
   get_hl_iseq()->append(new Instruction(HINS_jmp, Operand(Operand::LABEL, loop_end)));
   
  
@@ -373,17 +375,18 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
  
 
   if (op == "=") {
+    // Visit right side (source)
+    Node *rhs = n->get_kid(2);
+   
+    visit(rhs);
+    Operand source = rhs->get_operand();
     // Handle destination assignment
     Node *lhs = n->get_kid(1);
     
     visit(lhs);
     Operand dest = lhs->get_operand();
     
-    // Visit right side (source)
-    Node *rhs = n->get_kid(2);
-   
-    visit(rhs);
-    Operand source = rhs->get_operand();
+    
     HighLevelOpcode mov_op;
     if (lhs->get_type()->is_pointer() || rhs->get_type()->is_pointer() || 
         lhs->get_type()->is_array() || rhs->get_type()->is_array()) {
@@ -777,17 +780,13 @@ void HighLevelCodegen::visit_indirect_field_ref_expression(Node *n) {
   }
 }
 void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
-
+    
     
     // Visit array base expression
     Node *array = n->get_kid(0);
     visit(array);
    
-    // Visit index expression
-    Node *index = n->get_kid(1);
-    visit(index);
-     
-    Operand index_op = index->get_operand();
+    
    
     
     // Get array base address
@@ -800,6 +799,11 @@ void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
         n->set_operand(Operand(Operand::VREG_MEM_OFF, array_base.get_base_reg(), 0));
         array_base = n->get_operand();
     }
+    // Visit index expression
+    Node *index = n->get_kid(1);
+    visit(index);
+     
+    Operand index_op = index->get_operand();
 
     // Convert index to 64-bit for address calculation
     int idx_vreg_64 = next_temp_vreg();  

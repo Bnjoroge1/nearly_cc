@@ -2,10 +2,35 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug Compiler",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [
+        
+        "fall2024-tests/assign04/input/example04.c"
+      ],
+      "stopAtEntry": false,
+      "externalConsole": false,
+      "cwd": "/home/bnjorog2/compilers/nearly_cc",
+      "program": "${workspaceFolder}/nearly_cc",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ],
+      "preLaunchTask": "C/C++: g++ build active file"
+    },
+    {
       "name": "C/C++ Runner: Debug Session",
       "type": "cppdbg",
       "request": "launch",
-      "args": ["-h", "remove.c"],
+      "args": [
+        "remove.c"
+      ],
       "stopAtEntry": false,
       "externalConsole": false,
       "cwd": "/home/bnjorog2/compilers/nearly_cc",

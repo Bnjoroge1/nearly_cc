@@ -488,11 +488,13 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
         return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RAX);
     }
     
-    // Handle vr1 - vr6 (argument registers)
-    if (vreg_num >=1 && vreg_num <=6) {
-        // Mapping vr1 - vr6 to %rdi, %rsi, %rdx, %rcx, %r8, %r9 respectively
-        return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RDI + (vreg_num -1));
-    }
+    //vr1 - vr6 (argument registers)
+    if (vreg_num >= 1 && vreg_num <= 6) {
+    // Map to correct registers: rdi, rsi, rdx, rcx, r8, r9
+    int mreg = (vreg_num == 2) ? MREG_RSI : 
+               MREG_RDI + (vreg_num - 1);
+    return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), mreg);
+}
     
     // Handle vr10 and above (memory)
     if (vreg_num >=10) {

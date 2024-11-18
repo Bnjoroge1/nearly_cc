@@ -1,10 +1,11 @@
-// test integer input
-
-int read_i32(void);
+// a relatively simple example program using an array
 
 int main(void) {
-  int x, y;
-  x = read_i32();
-  y = read_i32();
-  return x + y;
+  int arr[1], sum;
+
+  arr[0] = 2;
+
+  sum = arr[0] + 1;
+
+  return sum;
 }

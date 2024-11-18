@@ -124,7 +124,7 @@ void LocalStorageAllocation::visit_function_definition(Node *n) {
     if (name_node) {
       param_name = name_node->get_str();
       Symbol *sym = symtab->lookup_local(param_name);
-      printf("sym exists: %d\n", sym != nullptr);
+      
 
       if (sym) {
         // Both pointer and array parameters are handled as pointers
