@@ -262,18 +262,57 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
         ll_iseq->append(new Instruction(mov_opcode, dest, arg_reg_op));
         return;
     }
-    
-    if (src.is_memref() && dest.is_memref() ) {
-        // Memory-to-memory moves need an intermediate register
+    // Handle memory-to-memory moves
+    if (src.is_memref() && dest.is_memref()) {
+      //printf("memory-to-memory move\n");
+        // Use r10 as intermediate register with correct size
         Operand::Kind mreg_kind = select_mreg_kind(size);
         Operand r10(mreg_kind, MREG_R10);
         
-        // mov src -> r10
         ll_iseq->append(new Instruction(mov_opcode, src, r10));
-        
-        // mov r10 -> dest
         ll_iseq->append(new Instruction(mov_opcode, r10, dest));
-    } else {
+        return;
+    }
+    
+    // Handle memory indirection for source operand
+    // Handle memory indirection for source operand
+    if (hl_ins->get_operand(1).is_memref()) {
+      //printf("memory indirection for source operand\n");
+        // Load the address into r11
+        
+        Operand r11(Operand::MREG64, MREG_R11);
+        ll_iseq->append(new Instruction(MINS_MOVQ, src, r11));
+        
+        // Load from memory location into r10 using correct register size
+        Operand::Kind mreg_kind = select_mreg_kind(size);
+        Operand r10(mreg_kind, MREG_R10);
+        
+        // Use MREG64_MEM for memory reference, but correct mov_opcode for data size
+        ll_iseq->append(new Instruction(mov_opcode, 
+            Operand(Operand::MREG64_MEM, MREG_R11), r10));
+        
+        // Store to destination
+        ll_iseq->append(new Instruction(mov_opcode, r10, dest));
+        return;
+    }
+    
+    
+    // Handle memory indirection for destination operand
+           if (hl_ins->get_operand(0).is_memref()) {
+               // Move source to r10 with correct size
+               Operand::Kind mreg_kind = select_mreg_kind(size);
+               Operand r10(mreg_kind, MREG_R10);
+               ll_iseq->append(new Instruction(mov_opcode, src, r10));
+               
+               // Load the destination address into r11 using LEAQ
+               Operand r11(Operand::MREG64, MREG_R11);
+               ll_iseq->append(new Instruction(MINS_LEAQ, dest, r11)); 
+               
+               // Store through the pointer using MREG64_MEM
+               ll_iseq->append(new Instruction(mov_opcode, r10, 
+                   Operand(Operand::MREG64_MEM, MREG_R11)));
+               return;
+           }else {
         // Direct move
         ll_iseq->append(new Instruction(mov_opcode, src, dest));
     }
@@ -318,6 +357,64 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     
     return;
 }
+if (hl_opcode == HINS_add_q) {
+    // Get operands
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);   // Result
+    Operand src1 = get_ll_operand(hl_ins->get_operand(1), 8, ll_iseq);   // First source
+    Operand src2 = get_ll_operand(hl_ins->get_operand(2), 8, ll_iseq);   // Second source
+
+    // Move first source to temporary register r10
+    Operand r10(Operand::MREG64, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVQ, src1, r10));
+    
+    // Add second source to r10
+    ll_iseq->append(new Instruction(MINS_ADDQ, src2, r10));
+    
+    // Move result to destination
+    ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
+    
+    return;
+}
+
+if (hl_opcode == HINS_mul_q) {
+    // Get operands
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);   // Result
+    Operand src1 = get_ll_operand(hl_ins->get_operand(1), 8, ll_iseq);   // First source
+    Operand src2 = get_ll_operand(hl_ins->get_operand(2), 8, ll_iseq);   // Second source (immediate value $4)
+
+    // Move first source to temporary register r10
+    Operand r10(Operand::MREG64, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVQ, src1, r10));
+    
+    // Multiply r10 by immediate value
+    ll_iseq->append(new Instruction(MINS_IMULQ, src2, r10));
+    
+    // Move result to destination
+    ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
+    
+    return;
+}
+// Handle add instructions
+    if (match_hl(HINS_add_b, hl_opcode)) {
+        int size = highlevel_opcode_get_source_operand_size(hl_opcode);
+        LowLevelOpcode add_opcode = select_ll_opcode(MINS_ADDB, size);
+        
+        Operand src1 = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
+        Operand src2 = get_ll_operand(hl_ins->get_operand(2), size, ll_iseq);
+        Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
+        
+        // Load first operand into r10
+        Operand::Kind mreg_kind = select_mreg_kind(size);
+        Operand r10(mreg_kind, MREG_R10);
+        ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), src1, r10));
+        
+        // Add second operand to r10
+        ll_iseq->append(new Instruction(add_opcode, src2, r10));
+        
+        // Store result
+        ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), r10, dest));
+        return;
+    }
       if (hl_opcode == HINS_cjmp_t) {
     // Operand Structure:
     // Operand 0: Condition Virtual Register (stores 0 or 1)
@@ -341,8 +438,44 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     ll_iseq->append(new Instruction(MINS_JNE, target_label));
 
     return;
+}if (hl_opcode == HINS_mul_l) {
+    // Get operands (all 32-bit/4-byte size for mul_l)
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Result
+    Operand src1 = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // First source
+    Operand src2 = get_ll_operand(hl_ins->get_operand(2), 4, ll_iseq);   // Second source
+
+    // Move first source to temporary register r10d (32-bit version)
+    Operand r10(Operand::MREG32, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVL, src1, r10));
+    
+    // Multiply r10d by second source
+    ll_iseq->append(new Instruction(MINS_IMULL, src2, r10));
+    
+    // Move result to destination
+    ll_iseq->append(new Instruction(MINS_MOVL, r10, dest));
+    
+    return;
 }
-        if (hl_opcode == HINS_cmplte_l) {
+if (hl_opcode == HINS_sconv_lq) {
+    // Get operands - source is 32-bit (long), destination is 64-bit (quad)
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);   // 8 bytes for quad
+    Operand src = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);    // 4 bytes for long
+
+    // Move source to temporary register (32-bit version)
+    Operand r10_32(Operand::MREG32, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVL, src, r10_32));
+
+    // Sign extend from 32-bit to 64-bit using MOVSLQ
+    Operand r10_64(Operand::MREG64, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVSLQ, r10_32, r10_64));
+
+    // Store result in destination
+    ll_iseq->append(new Instruction(MINS_MOVQ, r10_64, dest));
+
+    return;
+}
+
+    if (hl_opcode == HINS_cmplte_l) {
         // Operand Structure:
         // Operand 0: Destination Virtual Register (stores 0 or 1)
         // Operand 1: Left Virtual Register
@@ -419,7 +552,27 @@ ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
         // Store result
         ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), r10, dest));
         return;
-    }
+    }if (hl_opcode == HINS_localaddr) {
+    // Get the destination operand
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);
+    
+    // Get the offset and adjust it (-8 is the base offset for local vars)
+    int offset = -8 + hl_ins->get_operand(1).get_imm_ival();
+    
+    // Create temporary register for the address
+    Operand r10(Operand::MREG64, MREG_R10);
+    
+    // Create memory reference with adjusted offset
+    Operand mem_ref(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+    
+    // First instruction: load effective address into r10
+    ll_iseq->append(new Instruction(MINS_LEAQ, mem_ref, r10));
+    
+    // Second instruction: store r10 into destination
+    ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
+    
+    return;
+}
   if (hl_opcode == HINS_enter) {
     // Function prologue: this will create an ABI-compliant stack frame.
     // The local variable area is *below* the address in %rbp, and local storage
@@ -473,41 +626,59 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
         return hl_op;  // Immediate values pass through
     }
     
-    // **Handle label operands**
+    // Handle label operands
     if (hl_op.is_label() || hl_op.is_imm_label()) {
         return hl_op; // Pass through as label operands
     }
 
+    // Handle memory references (array accesses)
+    if (hl_op.is_memref()) {
+        int vreg_num = hl_op.get_base_reg();
+        
+        // For array access through memory reference
+        if (vreg_num >= 10) {
+            int offset = m_base_vreg_offset + 8 * (vreg_num - 10);
+            return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+        }
+        
+        // Handle other memory references (vr0-vr9)
+        MachineReg base_reg;
+        if (vreg_num == 0) {
+            base_reg = MREG_RAX;
+        } else if (vreg_num >= 1 && vreg_num <= 6) {
+            base_reg = (vreg_num == 2) ? MREG_RSI : 
+                      static_cast<MachineReg>(MREG_RDI + (vreg_num - 1));
+        } else {
+            RuntimeError::raise("Invalid virtual register for memory reference: vr%d", vreg_num);
+        }
+        return Operand(Operand::MREG64_MEM, base_reg);
+    }
+
+    // Handle regular virtual registers
     int vreg_num = hl_op.get_base_reg();
-  
     
     // Handle vr0 (return register)
     if (vreg_num == 0) {
-        // Map vr0 to %rax or its sub-register based on size
-    
-        return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), MREG_RAX);
+        return Operand(select_mreg_kind(size), MREG_RAX);
     }
     
-    //vr1 - vr6 (argument registers)
+    // vr1 - vr6 (argument registers)
     if (vreg_num >= 1 && vreg_num <= 6) {
-    // Map to correct registers: rdi, rsi, rdx, rcx, r8, r9
-    int mreg = (vreg_num == 2) ? MREG_RSI : 
-               MREG_RDI + (vreg_num - 1);
-    return Operand(static_cast<Operand::Kind>(select_mreg_kind(size)), mreg);
-}
+        int mreg = (vreg_num == 2) ? MREG_RSI : 
+                   MREG_RDI + (vreg_num - 1);
+        return Operand(select_mreg_kind(size), mreg);
+    }
     
     // Handle vr10 and above (memory)
-    if (vreg_num >=10) {
-        int offset = m_base_vreg_offset + 8 * (vreg_num - 10);  // 8 bytes per vreg for alignment
- 
-        assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
-        
-        // Correct the order of parameters: base_reg first, then offset
-        Operand mem_operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
-     
-        return mem_operand;
-    }
+    if (vreg_num >= 10) {
+    // Calculate from the bottom of the stack frame
+    // Each vreg gets 8 bytes, counting backwards from the highest vreg
+    //printf("processing memory vregs: %d\n", vreg_num);
+        int offset = -120 + (8 * (vreg_num - 11));  // Start at -128, each vreg gets 8 bytes
+    //printf("offset: %d\n", offset);
+    assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
+    return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+}
     
-    // If vr_num does not fit expected categories, raise an error
     RuntimeError::raise("Invalid virtual register number: vr%d", vreg_num);
 }
