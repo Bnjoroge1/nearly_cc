@@ -1,13 +1,13 @@
-void print_i64(long n);
+void print_i32(int n);
 void print_nl(void);
 
 int main(void) {
-  long a, b, c;
-  a = 14642L;
-  a = a * 341491L;
-  b = 29L;
-  c = a * b;
-  print_i64(c);
-  print_nl();
+  int n;
+  n = 10;
+  while (n > 0) {
+    print_i32(n);
+    print_nl();
+    n = n - 1;
+  }
   return 0;
 }

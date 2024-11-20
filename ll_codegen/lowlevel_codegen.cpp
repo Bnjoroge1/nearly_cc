@@ -299,14 +299,15 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     
     // Handle memory indirection for destination operand
            if (hl_ins->get_operand(0).is_memref()) {
+            // Load the destination address into r11 using LEAQ
+               Operand r11(Operand::MREG64, MREG_R11);
+               ll_iseq->append(new Instruction(MINS_LEAQ, dest, r11)); 
+               
                // Move source to r10 with correct size
                Operand::Kind mreg_kind = select_mreg_kind(size);
                Operand r10(mreg_kind, MREG_R10);
                ll_iseq->append(new Instruction(mov_opcode, src, r10));
                
-               // Load the destination address into r11 using LEAQ
-               Operand r11(Operand::MREG64, MREG_R11);
-               ll_iseq->append(new Instruction(MINS_LEAQ, dest, r11)); 
                
                // Store through the pointer using MREG64_MEM
                ll_iseq->append(new Instruction(mov_opcode, r10, 
@@ -319,7 +320,55 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
 
     
     return;
-}    if (hl_opcode == HINS_call) {
+}  if (match_hl(HINS_sub_b, hl_opcode)) {
+    int size = highlevel_opcode_get_source_operand_size(hl_opcode);
+    LowLevelOpcode sub_opcode = select_ll_opcode(MINS_SUBB, size);
+    
+    // Get operands
+    Operand src1 = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
+    Operand src2 = get_ll_operand(hl_ins->get_operand(2), size, ll_iseq);
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
+    
+    // Load first operand into r10
+    Operand::Kind mreg_kind = select_mreg_kind(size);
+    Operand r10(mreg_kind, MREG_R10);
+    ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), src1, r10));
+    
+    // Subtract second operand from r10
+    ll_iseq->append(new Instruction(sub_opcode, src2, r10));
+    
+    // Store result
+    ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), r10, dest));
+    return;
+}  if (hl_opcode == HINS_cmpgt_l) {
+    // Extract operands
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Result (32-bit)
+    Operand left = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // Left operand
+    Operand right = get_ll_operand(hl_ins->get_operand(2), 4, ll_iseq);  // Right operand
+    
+    // Define temporary registers
+    Operand temp_flag(Operand::MREG8, MREG_R10);      // 8-bit for setg
+    Operand extended_flag(Operand::MREG32, MREG_R11); // 32-bit for final result
+    Operand extended_flag1(Operand::MREG32, MREG_R10); // 32-bit for comparison
+    
+    // 1. Move left operand to temporary register
+    ll_iseq->append(new Instruction(MINS_MOVL, left, extended_flag1));
+    
+    // 2. Compare with right operand
+    ll_iseq->append(new Instruction(MINS_CMPL, right, extended_flag1));
+    
+    // 3. Set byte based on greater than comparison
+    ll_iseq->append(new Instruction(MINS_SETG, temp_flag));
+    
+    // 4. Zero-extend the result to 32 bits
+    ll_iseq->append(new Instruction(MINS_MOVZBL, temp_flag, extended_flag));
+    
+    // 5. Move to destination
+    ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
+    
+    return;
+}
+if (hl_opcode == HINS_call) {
     // Extract the function name/label from the operand
     std::string func_name = hl_ins->get_operand(0).get_label();
     
@@ -398,24 +447,7 @@ if (hl_opcode == HINS_add_q) {
     return;
 }
 
-if (hl_opcode == HINS_mul_q) {
-    // Get operands
-    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);   // Result
-    Operand src1 = get_ll_operand(hl_ins->get_operand(1), 8, ll_iseq);   // First source
-    Operand src2 = get_ll_operand(hl_ins->get_operand(2), 8, ll_iseq);   // Second source (immediate value $4)
 
-    // Move first source to temporary register r10
-    Operand r10(Operand::MREG64, MREG_R10);
-    ll_iseq->append(new Instruction(MINS_MOVQ, src1, r10));
-    
-    // Multiply r10 by immediate value
-    ll_iseq->append(new Instruction(MINS_IMULQ, src2, r10));
-    
-    // Move result to destination
-    ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
-    
-    return;
-}
 // Handle add instructions
     if (match_hl(HINS_add_b, hl_opcode)) {
         int size = highlevel_opcode_get_source_operand_size(hl_opcode);
@@ -507,10 +539,7 @@ if (hl_opcode == HINS_sconv_lq) {
 }
 
     if (hl_opcode == HINS_cmplte_l) {
-        // Operand Structure:
-        // Operand 0: Destination Virtual Register (stores 0 or 1)
-        // Operand 1: Left Virtual Register
-        // Operand 2: Right Virtual Register
+        
 
         // Extract operands
         Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Destination operand (32-bit)
@@ -520,10 +549,7 @@ if (hl_opcode == HINS_sconv_lq) {
         // Define temporary registers using MREG_R10
         // Using Operand::MREG8 to represent %r10b and Operand::MREG32 for %r10d
         Operand temp_flag(Operand::MREG8, MREG_R10);       // 8-bit register (e.g., %r10b)
-        Operand extended(Operand::MREG32, MREG_R10);  // 32-bit register (e.g., %r10d)
-        
-        // 1. Compare right with left: cmpl right, left
-        // 1. Move left operand into temporary register
+        Operand extended(Operand::MREG32, MREG_R10);  
 ll_iseq->append(new Instruction(MINS_MOVL, left, extended));
 
 // 2. Compare with right operand: cmpl right, left
