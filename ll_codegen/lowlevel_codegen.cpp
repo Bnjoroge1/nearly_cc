@@ -319,9 +319,31 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
 
     
     return;
-}     if (hl_opcode == HINS_call) {
+}    if (hl_opcode == HINS_call) {
     // Extract the function name/label from the operand
     std::string func_name = hl_ins->get_operand(0).get_label();
+    
+    // For each argument, ensure we're using the correct size moves
+    for (unsigned i = 1; i < hl_ins->get_num_operands(); i++) {
+        Operand src = get_ll_operand(hl_ins->get_operand(i), 8, ll_iseq);  // Use 8 bytes for long
+        printf("src: %d \n", src.get_kind());
+        printf("function name: %s \n", func_name.c_str());
+        // Map to the correct argument register (rdi, rsi, rdx, etc.)
+        MachineReg arg_reg;
+        switch(i) {
+            case 1: arg_reg = MREG_RDI; break;
+            case 2: arg_reg = MREG_RSI; break;
+            case 3: arg_reg = MREG_RDX; break;
+            case 4: arg_reg = MREG_RCX; break;
+            case 5: arg_reg = MREG_R8; break;
+            case 6: arg_reg = MREG_R9; break;
+            default: RuntimeError::raise("Too many arguments");
+        }
+        
+        // Use MOVQ for 64-bit values (like long)
+        Operand dest(Operand::MREG64, arg_reg);
+        ll_iseq->append(new Instruction(MINS_MOVQ, src, dest));
+    }
     
     // Create a label operand for the function
     Operand func_label(Operand::LABEL, func_name);
@@ -330,7 +352,7 @@ void LowLevelCodeGen::translate_instruction(Instruction *hl_ins, std::shared_ptr
     ll_iseq->append(new Instruction(MINS_CALL, func_label));
     
     return;
-}   if (hl_opcode == HINS_cmpeq_l) {
+} if (hl_opcode == HINS_cmpeq_l) {
     // Extract operands
     Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Result (32-bit)
     Operand left = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // Left operand
@@ -637,7 +659,7 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     
     // Handle label operands
     if (hl_op.is_label() || hl_op.is_imm_label()) {
-        return hl_op; // Pass through as label operands
+        return hl_op; 
     }
 
     // Handle memory references (array accesses)
@@ -683,7 +705,8 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     // Calculate from the bottom of the stack frame
     // Each vreg gets 8 bytes, counting backwards from the highest vreg
     //printf("processing memory vregs: %d\n", vreg_num);
-        int offset = -120 + (8 * (vreg_num - 11));  // Start at -128, each vreg gets 8 bytes
+                int offset = -8 * (vreg_num - 9);  
+
     //printf("offset: %d\n", offset);
     assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
     return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
