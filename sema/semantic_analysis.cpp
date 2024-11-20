@@ -153,12 +153,13 @@ void SemanticAnalysis::visit_basic_type(Node *n) {
         kind = BasicTypeKind::SHORT;
         is_short = true;
         break;
-      case TOK_INT:
-        kind = BasicTypeKind::INT;
-        break;
+       
       case TOK_LONG:
         kind = BasicTypeKind::LONG;
         is_long = true;
+        break;
+      case TOK_INT:
+        kind = BasicTypeKind::INT;
         break;
       case TOK_VOID:
         kind = BasicTypeKind::VOID;
@@ -1314,9 +1315,16 @@ void SemanticAnalysis::visit_literal_value(Node *n) {
         std::shared_ptr<Type> literal_type;
 
   switch (literal_child->get_tag()) {
-            case TOK_INT_LIT:
-             literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
-             break;
+            case TOK_INT_LIT: {
+                // Check for 'L' or 'l' suffix
+                bool is_long = (literal_str.back() == 'L' || literal_str.back() == 'l');
+                if (is_long) {
+                    literal_type = std::make_shared<BasicType>(BasicTypeKind::LONG, true);
+                } else {
+                    literal_type = std::make_shared<BasicType>(BasicTypeKind::INT, true);
+                }
+                break;
+            }
             case TOK_CHAR_LIT:
                 literal_type = std::make_shared<BasicType>(BasicTypeKind::CHAR, true);
                 break;
@@ -1333,6 +1341,10 @@ void SemanticAnalysis::visit_literal_value(Node *n) {
                     const_char_type,
                     literal_str.length() + 1 
                 );
+                break;
+            }
+            case TOK_LONG: {
+                literal_type = std::make_shared<BasicType>(BasicTypeKind::LONG, true);
                 break;
             }
             default:

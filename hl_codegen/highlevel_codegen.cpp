@@ -33,12 +33,25 @@
 
 // Adjust an opcode for a basic type
 HighLevelOpcode get_opcode(HighLevelOpcode base_opcode, std::shared_ptr<Type> type) {
-  if (type->is_basic())
+  if (type->is_basic()){
+    BasicTypeKind kind = type->get_basic_type_kind();
+    
+    
+    // Calculate the offset based on the enum value
+    int offset = static_cast<int>(kind);
+    
+    
+    if (kind == BasicTypeKind::LONG) {
+      offset = 3;  // Force quad-word operations for LONG
+    }
     return static_cast<HighLevelOpcode>(int(base_opcode) + int(type->get_basic_type_kind()));
-  else if (type->is_pointer())
+  }
+  else if (type->is_pointer()){
     return static_cast<HighLevelOpcode>(int(base_opcode) + int(BasicTypeKind::LONG));
-  else
+  }
+  else{
     RuntimeError::raise("attempt to use type '%s' as data in opcode selection", type->as_str().c_str());
+  }
 }
 
 HighLevelCodegen::HighLevelCodegen(const Options &options, int next_label_num, int next_vreg)
@@ -387,10 +400,10 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     Operand dest = lhs->get_operand();
     
     
-    HighLevelOpcode mov_op;
-    if (lhs->get_type()->is_pointer() || rhs->get_type()->is_pointer() || 
+    HighLevelOpcode mov_op = get_opcode(HINS_mov_l, lhs->get_type());
+    if (lhs->get_type()->is_pointer() || rhs->get_type()->is_pointer() ||  is_long_type(lhs->get_type()) ||
         lhs->get_type()->is_array() || rhs->get_type()->is_array()) {
-      mov_op = HINS_mov_q;  // Use 64-bit move for pointers/arrays
+      mov_op = HINS_mov_q;  
     } else {
     
       mov_op = HINS_mov_l;  // Use 32-bit move for integers
@@ -537,7 +550,6 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
         return;
     
   }else if (op == "*") {
-  
     visit(n->get_kid(1));
     visit(n->get_kid(2));
     
@@ -555,22 +567,30 @@ void HighLevelCodegen::visit_binary_expression(Node *n) {
     Operand left_val = left;
     Operand right_val = right;
     
+    // Get the type to determine which multiplication instruction to use
+    std::shared_ptr<Type> type = n->get_type();
+    HighLevelOpcode mul_op = get_opcode(HINS_mul_b, type);  
+    
     if (right.get_kind() == Operand::VREG_MEM) {
         int temp_vreg = m_next_vreg++;
-        get_hl_iseq()->append(new Instruction(HINS_mov_l,
+        // Use the correct move instruction based on type
+        HighLevelOpcode mov_op = get_opcode(HINS_mov_b, type);
+        get_hl_iseq()->append(new Instruction(mov_op,
             Operand(Operand::VREG, temp_vreg), right));
         right_val = Operand(Operand::VREG, temp_vreg);
     }
     
     if (left.get_kind() == Operand::VREG_MEM) {
         int temp_vreg = m_next_vreg++;
-        get_hl_iseq()->append(new Instruction(HINS_mov_l,
+        // Use the correct move instruction based on type
+        HighLevelOpcode mov_op = get_opcode(HINS_mov_b, type);
+        get_hl_iseq()->append(new Instruction(mov_op,
             Operand(Operand::VREG, temp_vreg), left));
         left_val = Operand(Operand::VREG, temp_vreg);
     }
     
-    // Perform multiplication
-    get_hl_iseq()->append(new Instruction(HINS_mul_l, result, left_val, right_val));
+    // Perform multiplication with correct instruction based on type
+    get_hl_iseq()->append(new Instruction(mul_op, result, left_val, right_val));
     n->set_operand(result);
 }
   else if (op == "-") {
@@ -869,25 +889,35 @@ void HighLevelCodegen::visit_variable_ref(Node *n) {
 }
 
 void HighLevelCodegen::visit_literal_value(Node *n) {
-  
   if (!n || !n->get_type()) {
     return;
   }
-  
 
-  // Get the literal value from the token node
-  Node *literal_token = n->get_kid(0);  // Get the TOK_INT_LIT node
+  Node *literal_token = n->get_kid(0);
   
   if (literal_token) {
     int val_vreg = m_next_vreg++;
     Operand dest(Operand::VREG, val_vreg);
+    
     // Create a new LiteralValue from the token's value
     LiteralValue val = LiteralValue::from_int_literal(literal_token->get_str(), literal_token->get_loc());
     
-    // Set the immediate value operand directly
-    get_hl_iseq()->append(new Instruction(HINS_mov_l, dest, 
+    
+    // Get the correct move opcode based on the literal node's type
+    HighLevelOpcode mov_op = get_opcode(HINS_mov_l, n->get_type());
+    //("mov op: %d \n", mov_op);
+    //printf("n->get_type(): %d \n", n->get_type());
+    if (n->get_type()->is_basic() && n->get_type()->get_basic_type_kind() == BasicTypeKind::LONG) {
+      mov_op = HINS_mov_q;  // 64-bit move for long literals
+    } else {
+      mov_op = HINS_mov_l;  // 32-bit move for int literals
+    }
+    //("we are using mov op: %d \n", mov_op);
+    
+    // Set the immediate value operand with the correct move instruction
+    get_hl_iseq()->append(new Instruction(mov_op, dest, 
                         Operand(Operand::IMM_IVAL, val.get_int_value())));
-   n->set_operand(dest);
+    n->set_operand(dest);
   }
 }
 
@@ -952,3 +982,6 @@ std::string HighLevelCodegen::next_label() {
   return label;
 }
 
+bool HighLevelCodegen::is_long_type(const std::shared_ptr<Type>& type) {
+  return type->is_basic() && type->get_basic_type_kind() == BasicTypeKind::LONG;
+}

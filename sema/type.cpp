@@ -88,6 +88,7 @@ bool Type::is_const() const {
 }
 
 BasicTypeKind Type::get_basic_type_kind() const {
+  
   RuntimeError::raise("not a BasicType");
 }
 

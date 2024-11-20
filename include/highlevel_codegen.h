@@ -86,10 +86,14 @@ public:
   virtual void visit_variable_ref(Node *n);
   virtual void visit_literal_value(Node *n);
   virtual void visit_implicit_conversion(Node *n);
+  
 
 private:
   std::string next_label();
   int next_temp_vreg() { return m_next_vreg++; }
+  bool is_long_type(const std::shared_ptr<Type>& type);
+  
+
 
   
 };
