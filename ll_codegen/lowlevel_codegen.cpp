@@ -438,21 +438,30 @@ if (hl_opcode == HINS_mul_q) {
     ll_iseq->append(new Instruction(MINS_JNE, target_label));
 
     return;
-}if (hl_opcode == HINS_mul_l) {
-    // Get operands (all 32-bit/4-byte size for mul_l)
-    Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // Result
-    Operand src1 = get_ll_operand(hl_ins->get_operand(1), 4, ll_iseq);   // First source
-    Operand src2 = get_ll_operand(hl_ins->get_operand(2), 4, ll_iseq);   // Second source
-
-    // Move first source to temporary register r10d (32-bit version)
-    Operand r10(Operand::MREG32, MREG_R10);
-    ll_iseq->append(new Instruction(MINS_MOVL, src1, r10));
+}// Handle multiplication instructions (both 32-bit and 64-bit)
+if (hl_opcode == HINS_mul_l || hl_opcode == HINS_mul_q) {
+    // Determine operand size based on instruction type
+    int size = (hl_opcode == HINS_mul_l) ? 4 : 8;
     
-    // Multiply r10d by second source
-    ll_iseq->append(new Instruction(MINS_IMULL, src2, r10));
+    // Get operands
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);   // Result
+    Operand src1 = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);   // First source
+    Operand src2 = get_ll_operand(hl_ins->get_operand(2), size, ll_iseq);   // Second source
+
+    // Select appropriate register size and multiplication instruction
+    Operand::Kind mreg_kind = select_mreg_kind(size);
+    LowLevelOpcode mul_opcode = (size == 4) ? MINS_IMULL : MINS_IMULQ;
+    LowLevelOpcode mov_opcode = (size == 4) ? MINS_MOVL : MINS_MOVQ;
+    
+    // Move first source to temporary register
+    Operand r10(mreg_kind, MREG_R10);
+    ll_iseq->append(new Instruction(mov_opcode, src1, r10));
+    
+    // Multiply r10 by second source
+    ll_iseq->append(new Instruction(mul_opcode, src2, r10));
     
     // Move result to destination
-    ll_iseq->append(new Instruction(MINS_MOVL, r10, dest));
+    ll_iseq->append(new Instruction(mov_opcode, r10, dest));
     
     return;
 }

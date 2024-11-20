@@ -1,7 +1,13 @@
+void print_i64(long n);
+void print_nl(void);
+
 int main(void) {
-  int a, b, c;
-  a = 7;
-  b = 11;
+  long a, b, c;
+  a = 14642L;
+  a = a * 341491L;
+  b = 29L;
   c = a * b;
-  return c;
+  print_i64(c);
+  print_nl();
+  return 0;
 }
