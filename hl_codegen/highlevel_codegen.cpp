@@ -263,8 +263,7 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
   }
   //jump to return label
 
-  //print return value
-  get_hl_iseq()->append(new Instruction(HINS_jmp, Operand(Operand::LABEL, loop_end)));
+  
   
  
 }
