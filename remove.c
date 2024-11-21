@@ -1,12 +1,11 @@
+// a relatively simple example program using an array
+
 int main(void) {
-  int i, n, sum;
+  int arr[1], sum;
 
-  sum = 0;
-  n = 11;
+  arr[0] = 2;
 
-  for (i = 0; i <= n; i = i + 1) {
-    sum = sum + i;
-  }
+  sum = arr[0] + 1;
 
   return sum;
 }
