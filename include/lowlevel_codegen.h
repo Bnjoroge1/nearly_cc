@@ -56,6 +56,11 @@ private:
   std::shared_ptr<InstructionSequence> translate_hl_to_ll(std::shared_ptr<InstructionSequence> hl_iseq);
   void translate_instruction(Instruction *hl_ins, std::shared_ptr<InstructionSequence> ll_iseq);
   Operand get_ll_operand(Operand hl_opcode, int size, std::shared_ptr<InstructionSequence> ll_iseq);
+  static const int VREG_RETVAL = 0;
+  static const int VREG_FIRST_ARG = 1;
+     static const int ARRAY_BASE_OFFSET = -8;     // Arrays start at -8(%rbp)
+   static const int VREG_BASE_OFFSET = -128;    // Virtual registers start at -128(%rbp)
+   static const int VREG_FIRST_LOCAL = 10;      // First local virtual register
 };
 
 #endif // LOWLEVEL_CODEGEN_H

@@ -546,39 +546,38 @@ if (hl_opcode == HINS_sconv_lq) {
         // Using Operand::MREG8 to represent %r10b and Operand::MREG32 for %r10d
         Operand temp_flag(Operand::MREG8, MREG_R10);       // 8-bit register (e.g., %r10b)
         Operand extended(Operand::MREG32, MREG_R10);  
-ll_iseq->append(new Instruction(MINS_MOVL, left, extended));
+        ll_iseq->append(new Instruction(MINS_MOVL, left, extended));
 
-// 2. Compare with right operand: cmpl right, left
-ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
+        ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
         Operand extended_flag(Operand::MREG32, MREG_R11);
-        // 2. Set the condition flag based on the comparison: setle %r10b
+        // Set the condition flag based on the comparison: setle %r10b
         ll_iseq->append(new Instruction(MINS_SETLE, temp_flag));
         
-        // 3. Zero-extend the condition flag to 32 bits: movzbl %r10b, %r10d
+        // Zero-extend the condition flag to 32 bits: movzbl %r10b, %r10d
         ll_iseq->append(new Instruction(MINS_MOVZBL, temp_flag, extended_flag));
         
-        // 4. Move the extended flag to the destination operand: movl %r10d, dest
+        // Move the extended flag to the destination operand: movl %r10d, dest
         ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
         
         return;
     }if (hl_opcode == HINS_cjmp_f) {
-    // Extract operands
-    Operand condition_vreg = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq); // 32-bit operand
+      // Extract operands
+      Operand condition_vreg = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq); // 32-bit operand
+      
+      // Handle the target label
+      std::string label = hl_ins->get_operand(1).get_label();
+      Operand target_label(Operand::LABEL, label);
+      
+      // Create immediate value operand for 0
+      Operand zero_operand(Operand::IMM_IVAL, 0);
+      
+      // Compare the condition register with 0
+      ll_iseq->append(new Instruction(MINS_CMPL, zero_operand, condition_vreg));
+      
+      // Jump if equal to 0 (condition is false)
+      ll_iseq->append(new Instruction(MINS_JE, target_label));
     
-    // Handle the target label
-    std::string label = hl_ins->get_operand(1).get_label();
-    Operand target_label(Operand::LABEL, label);
-    
-    // Create immediate value operand for 0
-    Operand zero_operand(Operand::IMM_IVAL, 0);
-    
-    // Compare the condition register with 0
-    ll_iseq->append(new Instruction(MINS_CMPL, zero_operand, condition_vreg));
-    
-    // Jump if equal to 0 (condition is false)
-    ll_iseq->append(new Instruction(MINS_JE, target_label));
-    
-    return;
+      return;
 }
     if (hl_opcode == HINS_jmp) {
       ll_iseq->append(new Instruction(MINS_JMP, hl_ins->get_operand(0)));
@@ -606,53 +605,44 @@ ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
         ll_iseq->append(new Instruction(select_ll_opcode(MINS_MOVB, size), r10, dest));
         return;
     }if (hl_opcode == HINS_localaddr) {
-    // Get the destination operand
-    Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);
-    
-    // Get the offset and adjust it (-8 is the base offset for local vars)
-    int offset = -8 + hl_ins->get_operand(1).get_imm_ival();
-    
-    // Create temporary register for the address
-    Operand r10(Operand::MREG64, MREG_R10);
-    
-    // Create memory reference with adjusted offset
-    Operand mem_ref(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
-    
-    // First instruction: load effective address into r10
-    ll_iseq->append(new Instruction(MINS_LEAQ, mem_ref, r10));
-    
-    // Second instruction: store r10 into destination
-    ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
-    
-    return;
+      // Get the destination operand
+      Operand dest = get_ll_operand(hl_ins->get_operand(0), 8, ll_iseq);
+      
+      // Get the offset and adjust it (-8 is the base offset for local vars)
+      int offset = -8 + hl_ins->get_operand(1).get_imm_ival();
+      
+      // Create temporary register for the address
+      Operand r10(Operand::MREG64, MREG_R10);
+      
+      // Create memory reference with adjusted offset
+      Operand mem_ref(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+      
+      // First instruction: load effective address into r10
+      ll_iseq->append(new Instruction(MINS_LEAQ, mem_ref, r10));
+      
+      // Second instruction: store r10 into destination
+      ll_iseq->append(new Instruction(MINS_MOVQ, r10, dest));
+      
+      return;
 }
   if (hl_opcode == HINS_enter) {
-    // Function prologue: this will create an ABI-compliant stack frame.
-    // The local variable area is *below* the address in %rbp, and local storage
-    // can be accessed at negative offsets from %rbp. For example, the topmost
-    // 4 bytes in the local storage area are at -4(%rbp).
+    
     ll_iseq->append(new Instruction(MINS_PUSHQ, Operand(Operand::MREG64, MREG_RBP)));
     ll_iseq->append(new Instruction(MINS_MOVQ, Operand(Operand::MREG64, MREG_RSP), Operand(Operand::MREG64, MREG_RBP)));
     if (m_total_memory_storage > 0)
       ll_iseq->append(new Instruction(MINS_SUBQ, Operand(Operand::IMM_IVAL, m_total_memory_storage), Operand(Operand::MREG64, MREG_RSP)));
 
-    // save callee-saved registers (if any)
-    // TODO: if you allocated callee-saved registers as storage for local variables,
-    //       emit pushq instructions to save their original values
+   
 
     return;
   }
 
   if (hl_opcode == HINS_leave) {
-    // Function epilogue: deallocate local storage area and restore original value
-    // of %rbp
-
-    // TODO: if you allocated callee-saved registers as storage for local variables,
-    //       emit popq instructions to save their original values
+    
 
     if (m_total_memory_storage > 0)
       ll_iseq->append(new Instruction(MINS_ADDQ, Operand(Operand::IMM_IVAL, m_total_memory_storage), Operand(Operand::MREG64, MREG_RSP)));
-    ll_iseq->append(new Instruction(MINS_POPQ, Operand(Operand::MREG64, MREG_RBP)));
+      ll_iseq->append(new Instruction(MINS_POPQ, Operand(Operand::MREG64, MREG_RBP)));
 
     return;
   }
@@ -662,18 +652,12 @@ ll_iseq->append(new Instruction(MINS_CMPL, right, extended));
     return;
   }
 
-  // TODO: handle other high-level instructions
-  // Note that you can use the highlevel_opcode_get_source_operand_size() and
-  // highlevel_opcode_get_dest_operand_size() functions to determine the
-  // size (in bytes, 1, 2, 4, or 8) of either the source operands or
-  // destination operand of a high-level instruction. This should be useful
-  // for choosing the appropriate low-level instructions and
-  // machine register operands.
+ 
 
   RuntimeError::raise("high level opcode %d not handled", int(hl_opcode));
 }
 
-// TODO: implement other private member functions
+
 Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr<InstructionSequence> ll_iseq) {
     if (hl_op.is_imm_ival()) {
         return hl_op;  // Immediate values pass through
@@ -684,27 +668,37 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
         return hl_op; 
     }
 
-    // Handle memory references (array accesses)
+    // Handle memory references (array accesses or variables)
     if (hl_op.is_memref()) {
         int vreg_num = hl_op.get_base_reg();
+        long offset = hl_op.get_offset();  // Get any additional offset
         
-        // For array access through memory reference
-        if (vreg_num >= 10) {
-            int offset = m_base_vreg_offset + 8 * (vreg_num - 10);
-            return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+        // Arrays and address-taken vars start at -8(%rbp)
+        if (vreg_num >= VREG_FIRST_LOCAL) {
+            // Virtual registers start at -128(%rbp)
+            int base_offset = VREG_BASE_OFFSET + (8 * (vreg_num - VREG_FIRST_LOCAL));
+            // Add any array index offset
+            int total_offset = base_offset + offset;
+            return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, total_offset);
         }
         
-        // Handle other memory references (vr0-vr9)
-        MachineReg base_reg;
-        if (vreg_num == 0) {
-            base_reg = MREG_RAX;
-        } else if (vreg_num >= 1 && vreg_num <= 6) {
-            base_reg = (vreg_num == 2) ? MREG_RSI : 
-                      static_cast<MachineReg>(MREG_RDI + (vreg_num - 1));
-        } else {
-            RuntimeError::raise("Invalid virtual register for memory reference: vr%d", vreg_num);
+        // Handle machine registers (vr0-vr6)
+        if (vreg_num <= 6) {
+            MachineReg base_reg;
+            if (vreg_num == 0) {
+                base_reg = MREG_RAX;
+            } else if (vreg_num >= 1 && vreg_num <= 6) {
+                base_reg = (vreg_num == 2) ? MREG_RSI : 
+                          static_cast<MachineReg>(MREG_RDI + (vreg_num - 1));
+            } else {
+                RuntimeError::raise("Invalid virtual register for memory reference: vr%d", vreg_num);
+            }
+            // If there's an offset, return memory reference with offset
+            if (offset != 0) {
+                return Operand(Operand::MREG64_MEM_OFF, base_reg, offset);
+            }
+            return Operand(Operand::MREG64_MEM, base_reg);
         }
-        return Operand(Operand::MREG64_MEM, base_reg);
     }
 
     // Handle regular virtual registers
@@ -717,22 +711,20 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     
     // vr1 - vr6 (argument registers)
     if (vreg_num >= 1 && vreg_num <= 6) {
-        int mreg = (vreg_num == 2) ? MREG_RSI : 
-                   MREG_RDI + (vreg_num - 1);
+        MachineReg mreg = (vreg_num == 2) ? MREG_RSI : 
+                         static_cast<MachineReg>(MREG_RDI + (vreg_num - 1));
         return Operand(select_mreg_kind(size), mreg);
     }
     
     // Handle vr10 and above (memory)
-    if (vreg_num >= 10) {
-    // Calculate from the bottom of the stack frame
-    // Each vreg gets 8 bytes, counting backwards from the highest vreg
-    //printf("processing memory vregs: %d\n", vreg_num);
-                int offset = -8 * (vreg_num - 9);  
-
-    //printf("offset: %d\n", offset);
-    assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
-    return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
-}
+    if (vreg_num >= VREG_FIRST_LOCAL) {
+        // Calculate offset from rbp
+        // Arrays start at -8(%rbp)
+        // Virtual registers start at -128(%rbp)
+        int offset = VREG_BASE_OFFSET + (8 * (vreg_num - VREG_FIRST_LOCAL));
+        assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
+        return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
+    }
     
     RuntimeError::raise("Invalid virtual register number: vr%d", vreg_num);
 }
