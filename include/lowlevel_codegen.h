@@ -41,6 +41,7 @@ private:
   const Options &m_options;
   std::shared_ptr<Function> m_function;
   int m_total_memory_storage;
+  bool is_array_base;
 
 public:
   LowLevelCodeGen(const Options &options);

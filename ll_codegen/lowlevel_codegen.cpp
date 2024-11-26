@@ -345,8 +345,7 @@ if (hl_opcode == HINS_call) {
     // For each argument, ensure we're using the correct size moves
     for (unsigned i = 1; i < hl_ins->get_num_operands(); i++) {
         Operand src = get_ll_operand(hl_ins->get_operand(i), 8, ll_iseq);  // Use 8 bytes for long
-        printf("src: %d \n", src.get_kind());
-        printf("function name: %s \n", func_name.c_str());
+        
         // Map to the correct argument register (rdi, rsi, rdx, etc.)
         MachineReg arg_reg;
         switch(i) {
@@ -663,7 +662,6 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
         return hl_op;  // Immediate values pass through
     }
     
-    // Handle label operands
     if (hl_op.is_label() || hl_op.is_imm_label()) {
         return hl_op; 
     }
@@ -671,15 +669,32 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     // Handle memory references (array accesses or variables)
     if (hl_op.is_memref()) {
         int vreg_num = hl_op.get_base_reg();
-        long offset = hl_op.get_offset();  // Get any additional offset
         
-        // Arrays and address-taken vars start at -8(%rbp)
+        // For array element access (indirect memory reference)
+        if (hl_op.get_kind() == Operand::VREG_MEM) {
+            // Load the computed address into r11
+            Operand addr = Operand(Operand::MREG64_MEM_OFF, MREG_RBP, 
+                m_base_vreg_offset + (8 * (vreg_num - VREG_FIRST_LOCAL)));
+            ll_iseq->append(new Instruction(MINS_MOVQ, addr, 
+                Operand(Operand::MREG64, MREG_R11)));
+            // Return memory reference using that address
+            return Operand(Operand::MREG64_MEM, MREG_R11);
+        }
+        
+        // For direct memory access
+        long offset = hl_op.has_imm_ival() ? hl_op.get_imm_ival() : 0;
+        
+        // Handle array base and virtual registers
         if (vreg_num >= VREG_FIRST_LOCAL) {
-            // Virtual registers start at -128(%rbp)
-            int base_offset = VREG_BASE_OFFSET + (8 * (vreg_num - VREG_FIRST_LOCAL));
-            // Add any array index offset
-            int total_offset = base_offset + offset;
-            return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, total_offset);
+            int base_offset;
+            // Check if this is from a localaddr instruction (array base)
+            if (hl_op.get_kind() == Operand::VREG && 
+                offset == 0) {  // localaddr always has offset 0
+                base_offset = -8;  // Arrays start at -8(%rbp)
+            } else {
+                base_offset = m_base_vreg_offset + (8 * (vreg_num - VREG_FIRST_LOCAL));
+            }
+            return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, base_offset + offset);
         }
         
         // Handle machine registers (vr0-vr6)
@@ -693,7 +708,6 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
             } else {
                 RuntimeError::raise("Invalid virtual register for memory reference: vr%d", vreg_num);
             }
-            // If there's an offset, return memory reference with offset
             if (offset != 0) {
                 return Operand(Operand::MREG64_MEM_OFF, base_reg, offset);
             }
@@ -704,24 +718,18 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     // Handle regular virtual registers
     int vreg_num = hl_op.get_base_reg();
     
-    // Handle vr0 (return register)
     if (vreg_num == 0) {
         return Operand(select_mreg_kind(size), MREG_RAX);
     }
     
-    // vr1 - vr6 (argument registers)
     if (vreg_num >= 1 && vreg_num <= 6) {
         MachineReg mreg = (vreg_num == 2) ? MREG_RSI : 
                          static_cast<MachineReg>(MREG_RDI + (vreg_num - 1));
         return Operand(select_mreg_kind(size), mreg);
     }
     
-    // Handle vr10 and above (memory)
     if (vreg_num >= VREG_FIRST_LOCAL) {
-        // Calculate offset from rbp
-        // Arrays start at -8(%rbp)
-        // Virtual registers start at -128(%rbp)
-        int offset = VREG_BASE_OFFSET + (8 * (vreg_num - VREG_FIRST_LOCAL));
+        int offset = m_base_vreg_offset + (8 * (vreg_num - VREG_FIRST_LOCAL));
         assert(vreg_num <= m_max_vreg && "vreg_num out of bounds");
         return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, offset);
     }
