@@ -42,6 +42,7 @@ private:
   std::shared_ptr<Function> m_function;
   int m_total_memory_storage;
   bool is_array_base;
+  int m_local_var_offset;
 
 public:
   LowLevelCodeGen(const Options &options);
