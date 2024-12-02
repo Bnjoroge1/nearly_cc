@@ -80,13 +80,17 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
     m_var_type = base_type;  
     visit(declarator);
     std::shared_ptr<Type> full_type = m_var_type;
+    
 
     // Get the variable name
     std::string var_name;
     if (declarator->get_tag() == AST_ARRAY_DECLARATOR) {
       Node* current = declarator;
       while (current->get_tag() == AST_ARRAY_DECLARATOR) {
+        
         current = current->get_kid(0);
+        
+
       }
       if (current->get_tag() == AST_NAMED_DECLARATOR) {
         var_name = current->get_kid(0)->get_str();
@@ -119,6 +123,8 @@ void SemanticAnalysis::visit_variable_declaration(Node *n) {
 
     // Add the symbol to the current symbol table
     m_cur_symtab->add_entry(declarator->get_loc(), SymbolKind::VARIABLE, var_name, full_type);
+  
+
 
     // Annotate the declarator node with the symbol
     declarator->set_symbol(sym);
@@ -271,9 +277,14 @@ void SemanticAnalysis::visit_pointer_declarator(Node *n) {
     n->set_type(m_var_type);
 }
 void SemanticAnalysis::visit_array_declarator(Node *n) {
+  assert(n->get_tag() == AST_ARRAY_DECLARATOR && "Expected AST_ARRAY_DECLARATOR node");
+  Node *child = n->get_kid(0);
+  visit(child);
   std::shared_ptr<Type> base_type = m_var_type;
   Node *size_expr = n->get_kid(1);
   int array_size = -1;
+
+  
 
   // Process the size expression
   if (size_expr) {
@@ -297,23 +308,18 @@ void SemanticAnalysis::visit_array_declarator(Node *n) {
   std::shared_ptr<Type> array_type = std::make_shared<ArrayType>(base_type, array_size);
   
   // Process the child declarator
-  Node *child = n->get_kid(0);
-  if (child->get_tag() == AST_ARRAY_DECLARATOR || child->get_tag() == AST_POINTER_DECLARATOR) {
-    visit(child);
-    // The child visit should have set the variable name, so we can just copy it
-    n->set_str(child->get_str());
-  } else if (child->get_tag() == AST_NAMED_DECLARATOR) {
-    visit(child);
-    // For named declarator, we need to get the name from its child
-    n->set_str(child->get_kid(0)->get_str());
-  } else if (child->get_tag() == TOK_IDENT) {
-    // Direct identifier, just set the name
-    n->set_str(child->get_str());
-  }
+  
 
   // Set the type for this node
   m_var_type = array_type;
   n->set_type(array_type);
+   
+    // Get the variable name from the child
+    if (child->get_tag() == AST_NAMED_DECLARATOR) {
+        n->set_str(child->get_kid(0)->get_str());
+    } else if (child->get_tag() == AST_ARRAY_DECLARATOR) {
+        n->set_str(child->get_str());
+    }
 
 }
 void SemanticAnalysis::visit_function_definition(Node *n) {
@@ -1240,36 +1246,41 @@ void SemanticAnalysis::visit_indirect_field_ref_expression(Node *n) {
 }
 
 void SemanticAnalysis::visit_array_element_ref_expression(Node *n) {
-  // Visit the array expression
-  Node *array_expr = n->get_kid(0);
-  visit(array_expr);
+    // Visit the array expression
+    Node *array_expr = n->get_kid(0);
+    visit(array_expr);
 
-  // Visit the index expression
-  Node *index_expr = n->get_kid(1);
-  visit(index_expr);
+    // Visit the index expression
+    Node *index_expr = n->get_kid(1);
+    visit(index_expr);
 
-  // Check that the array expression is an array or pointer type
-  std::shared_ptr<Type> array_type = array_expr->get_type();
-  if (!array_type || (!array_type->is_array() && !array_type->is_pointer())) {
-    SemanticError::raise(array_expr->get_loc(), "Subscripted value is neither array nor pointer");
-  }
+    
+    
+    // Check that the array expression is an array or pointer type
+    std::shared_ptr<Type> array_type = array_expr->get_type();
+    if (!array_type || (!array_type->is_array() && !array_type->is_pointer())) {
+        SemanticError::raise(array_expr->get_loc(), "Subscripted value is neither array nor pointer");
+    }
 
-  // Check that the index expression is an integral type
-  std::shared_ptr<Type> index_type = index_expr->get_type();
-  if (!index_type || !index_type->is_integral()) {
-    SemanticError::raise(index_expr->get_loc(), "Array subscript is not an integer");
-  }
+    // Check that the index expression is an integral type
+    std::shared_ptr<Type> index_type = index_expr->get_type();
+    if (!index_type || !index_type->is_integral()) {
+        SemanticError::raise(index_expr->get_loc(), "Array subscript is not an integer");
+    }
 
-  // Determine the element type
-  std::shared_ptr<Type> element_type;
-  if (array_type->is_array()) {
-    element_type = std::dynamic_pointer_cast<ArrayType>(array_type)->get_base_type();
-  } else { // is_pointer
-    element_type = std::dynamic_pointer_cast<PointerType>(array_type)->get_base_type();
-  }
-
-  // Set the type of the array element reference node
-  n->set_type(element_type);
+    // Determine the element type with array-to-pointer decay
+    if (array_type->is_array()) {
+        std::shared_ptr<ArrayType> arr_type = 
+            std::dynamic_pointer_cast<ArrayType>(array_type);
+        // Set the type to the base type (not wrapped in a pointer)
+        n->set_type(arr_type->get_base_type());
+        n->set_is_lvalue(true);
+    } else { // is_pointer
+        std::shared_ptr<PointerType> ptr_type = 
+            std::dynamic_pointer_cast<PointerType>(array_type);
+        n->set_type(ptr_type->get_base_type());
+        n->set_is_lvalue(true);
+    }
 }
 
 void SemanticAnalysis::visit_variable_ref(Node *n) {

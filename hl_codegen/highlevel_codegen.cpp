@@ -88,6 +88,7 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
 
   total_local_storage = m_function->get_local_storage_size();
   
+  
 
 
   get_hl_iseq()->append(new Instruction(HINS_enter, Operand(Operand::IMM_IVAL, total_local_storage)));
@@ -100,14 +101,18 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
     
     // Get parameter name based on declarator type
     std::string param_name;
-    if (declarator->get_tag() == AST_POINTER_DECLARATOR || declarator->get_tag() == AST_ARRAY_DECLARATOR || declarator->get_tag() == AST_NAMED_DECLARATOR) {
-      // Pointer or array parameter
-      param_name = declarator->get_kid(0)->get_str();
-    } else {
-      param_name = declarator->get_str();
-    }
+        if (declarator->get_tag() == AST_POINTER_DECLARATOR) {
+            // For pointer parameters, need to get the name from the nested named declarator
+            Node *named_declarator = declarator->get_kid(0);
+            param_name = named_declarator->get_kid(0)->get_str();
+        } else if (declarator->get_tag() == AST_NAMED_DECLARATOR) {
+            param_name = declarator->get_kid(0)->get_str();
+        } else {
+            param_name = declarator->get_str();
+        }
     // Look up parameter's symbol to get its allocated vreg
     Symbol *sym = m_function->get_symbol()->get_symtab()->lookup_local(param_name);
+    assert(sym != nullptr);
     if (sym) {
       // Choose mov instruction based on parameter type
       HighLevelOpcode mov_op;
@@ -115,6 +120,7 @@ void HighLevelCodegen::visit_function_definition(Node *n) {
           sym->get_type()->is_array() || 
           declarator->get_tag() == AST_POINTER_DECLARATOR ||
           declarator->get_tag() == AST_ARRAY_DECLARATOR) {
+            
         mov_op = HINS_mov_q;  
       } else {
         mov_op = HINS_mov_l; 
@@ -252,7 +258,7 @@ void HighLevelCodegen::visit_for_statement(Node *n) {
   get_hl_iseq()->define_label(loop_cond);
   if (cond) {
     visit(cond);
-    std::cout << "condition: " << cond->get_str() << std::endl;
+    
     Operand cond_result = cond->get_operand();
     if (cond_result.get_kind() != Operand::NONE) {
       get_hl_iseq()->append(new Instruction(HINS_cjmp_t,
@@ -693,23 +699,24 @@ for (unsigned i = 0; i < args->get_num_kids(); i++) {
     }
     
     // Now check if the base argument is an array
-    if (base_arg->get_tag() == AST_VARIABLE_REF) {
-        Symbol *sym = base_arg->get_symbol();
-        if (sym && sym->is_local() && sym->get_type()->is_array()) {
-            // Generate array address for argument
-            int addr_vreg = m_next_vreg++;
-            get_hl_iseq()->append(new Instruction(HINS_localaddr,
-                Operand(Operand::VREG, addr_vreg),
-                Operand(Operand::IMM_IVAL, sym->get_offset())));
+   // Now check if the base argument is an array or pointer
+        if (base_arg->get_tag() == AST_VARIABLE_REF) {
+            Symbol *sym = base_arg->get_symbol();
+            if (sym && sym->is_local() && (sym->get_type()->is_array() || sym->get_type()->is_pointer())) {
+                // Move array/pointer address to argument register using mov_q
+                Operand dest(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i);
+                Operand src = base_arg->get_operand();
                 
-            // Move array address to argument register
-            get_hl_iseq()->append(new Instruction(HINS_mov_q,
-                Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i),
-                Operand(Operand::VREG, addr_vreg)));
-            continue;
+                // Make sure we have a valid source operand
+                if (src.get_kind() == Operand::VREG || 
+                    src.get_kind() == Operand::VREG_MEM) {
+                    get_hl_iseq()->append(new Instruction(HINS_mov_q,
+                        dest,
+                        src));
+                }
+                continue;
+            }
         }
-    }
-    
     // Non-array argument
     get_hl_iseq()->append(new Instruction(HINS_mov_l,
         Operand(Operand::VREG, LocalStorageAllocation::VREG_FIRST_ARG + i),
@@ -799,29 +806,21 @@ void HighLevelCodegen::visit_indirect_field_ref_expression(Node *n) {
   }
 }
 void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
-    
-    
     // Visit array base expression
     Node *array = n->get_kid(0);
     visit(array);
-   
-    
-   
     
     // Get array base address
     Operand array_base = array->get_operand();
-   
 
+    // If we have a memory reference, we want the base register itself
     if (array_base.get_kind() == Operand::VREG_MEM) {
-        //  VREG_MEM_OFF with an offset of 0 instead of VREG_MEM
-       
-        n->set_operand(Operand(Operand::VREG_MEM_OFF, array_base.get_base_reg(), 0));
-        array_base = n->get_operand();
+        array_base = Operand(Operand::VREG, array_base.get_base_reg());
     }
+    
     // Visit index expression
     Node *index = n->get_kid(1);
     visit(index);
-     
     Operand index_op = index->get_operand();
 
     // Convert index to 64-bit for address calculation
@@ -851,6 +850,7 @@ void HighLevelCodegen::visit_array_element_ref_expression(Node *n) {
     // Set as memory reference using VREG_MEM
     n->set_operand(Operand(Operand::VREG_MEM, addr_vreg));
 }
+
 void HighLevelCodegen::visit_variable_ref(Node *n) {
   Symbol *sym = n->get_symbol();
   if (!sym) {
@@ -905,7 +905,7 @@ void HighLevelCodegen::visit_literal_value(Node *n) {
     // Get the correct move opcode based on the literal node's type
     HighLevelOpcode mov_op = get_opcode(HINS_mov_l, n->get_type());
     //("mov op: %d \n", mov_op);
-    //printf("n->get_type(): %d \n", n->get_type());
+   
     if (n->get_type()->is_basic() && n->get_type()->get_basic_type_kind() == BasicTypeKind::LONG) {
       mov_op = HINS_mov_q;  // 64-bit move for long literals
     } else {

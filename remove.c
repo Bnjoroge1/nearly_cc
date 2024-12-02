@@ -1,11 +1,28 @@
-// a relatively simple example program using an array
+void print_i32(int n);
+void print_space(void);
+void print_nl(void);
 
 int main(void) {
-  int arr[1], sum;
+  int i, j, n;
 
-  arr[0] = 2;
+  int m[10][10];
 
-  sum = arr[0] + 1;
+  for (i = 0; i <= 9; i = i + 1) {
+    n = 0;
 
-  return sum;
+    for (j = 0; j <= 9; j = j + 1) {
+      m[i][j] = n;
+      n = n + i;
+    }
+  }
+
+  for (i = 0; i <= 9; i = i + 1) {
+    for (j = 0; j <= 9; j = j + 1) {
+      print_i32(m[i][j]);
+      print_space();
+    }
+    print_nl();
+  }
+
+  return 0;
 }

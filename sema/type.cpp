@@ -22,6 +22,7 @@
 #include "exceptions.h"
 #include "storage.h"
 #include "type.h"
+#include <iostream>
 
 ////////////////////////////////////////////////////////////////////////
 // Type implementation
@@ -694,6 +695,7 @@ unsigned ArrayType::get_array_size() const {
 }
 
 unsigned ArrayType::get_storage_size() const {
+ 
   return get_base_type()->get_storage_size() * m_size;
 }
 

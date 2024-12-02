@@ -45,3 +45,10 @@ NodeBase::~NodeBase() {
   }
 
 // TODO: implement member functions
+void NodeBase::set_is_lvalue(bool is_lvalue) {
+  m_is_lvalue = is_lvalue;
+}
+
+bool NodeBase::is_lvalue() const {
+  return m_is_lvalue;
+}

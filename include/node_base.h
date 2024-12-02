@@ -62,6 +62,8 @@ public:
   LiteralValue get_literal_value() const { return m_literal_value; }
   void set_function(Function *function) { m_function = function; }
   Function *get_function() const { return m_function; }
+  void set_is_lvalue(bool is_lvalue);
+  bool is_lvalue() const;
   // TODO: add member functions
 };
 

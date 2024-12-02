@@ -142,6 +142,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
 
     // Step 4: Calculate total storage needed
     m_total_memory_storage = local_storage_size + vreg_storage;
+   
   
 
     // Step 5: Align to 16 bytes
@@ -164,7 +165,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
         // Translate instruction
         unsigned ll_idx = ll_iseq->get_length();
         translate_instruction(hl_ins, ll_iseq);
-        
+
         // Annotate with high-level instruction comment
         HighLevelFormatter hl_formatter;
         ll_iseq->get_instruction(ll_idx)->set_comment(hl_formatter.format_instruction(hl_ins));
@@ -630,9 +631,6 @@ if (hl_opcode == HINS_sconv_lq) {
     ll_iseq->append(new Instruction(MINS_MOVQ, Operand(Operand::MREG64, MREG_RSP), Operand(Operand::MREG64, MREG_RBP)));
     if (m_total_memory_storage > 0)
       ll_iseq->append(new Instruction(MINS_SUBQ, Operand(Operand::IMM_IVAL, m_total_memory_storage), Operand(Operand::MREG64, MREG_RSP)));
-
-   
-
     return;
   }
 
