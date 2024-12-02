@@ -42,6 +42,10 @@ const std::map<HighLevelOpcode, LowLevelOpcode> HL_TO_LL = {
   { HINS_sub_w, MINS_SUBW },
   { HINS_sub_l, MINS_SUBL },
   { HINS_sub_q, MINS_SUBQ },
+  { HINS_neg_b, MINS_XORB },
+  { HINS_neg_w, MINS_XORW },
+  { HINS_neg_l, MINS_XORL },
+  { HINS_neg_q, MINS_XORQ },
   { HINS_mul_l, MINS_IMULL },
   { HINS_mul_q, MINS_IMULQ },
   { HINS_mov_b, MINS_MOVB },
@@ -338,6 +342,19 @@ ll_iseq->append(new Instruction(mov_opcode, src, dest));
     ll_iseq->append(new Instruction(MINS_MOVL, extended_flag, dest));
     
     return;
+}if (hl_opcode == HINS_sconv_bl) {
+    // Get operands - source is 1 byte, destination is 4 bytes
+    Operand dest = get_ll_operand(hl_ins->get_operand(0), 4, ll_iseq);   // 4 bytes for long
+    Operand src = get_ll_operand(hl_ins->get_operand(1), 1, ll_iseq);    // 1 byte for byte
+
+    // Move and sign extend from byte to long using MOVSBL
+    Operand r10_32(Operand::MREG32, MREG_R10);
+    ll_iseq->append(new Instruction(MINS_MOVSBL, src, r10_32));
+
+    // Store result in destination
+    ll_iseq->append(new Instruction(MINS_MOVL, r10_32, dest));
+
+    return;
 }
 if (hl_opcode == HINS_call) {
     // Extract the function name/label from the operand
@@ -532,7 +549,30 @@ if (hl_opcode == HINS_sconv_lq) {
     ll_iseq->append(new Instruction(MINS_MOVQ, r10_64, dest));
 
     return;
-}
+}if (match_hl(HINS_neg_b, hl_opcode)) {
+        int size = highlevel_opcode_get_source_operand_size(hl_opcode);
+        LowLevelOpcode mov_opcode = select_ll_opcode(MINS_MOVB, size);
+        LowLevelOpcode sub_opcode = select_ll_opcode(MINS_SUBB, size);
+        
+        // Get operands
+        Operand src = get_ll_operand(hl_ins->get_operand(1), size, ll_iseq);
+        Operand dest = get_ll_operand(hl_ins->get_operand(0), size, ll_iseq);
+        
+        // Move source to temporary register
+        Operand::Kind mreg_kind = select_mreg_kind(size);
+        Operand r10(mreg_kind, MREG_R10);
+        
+        // Move value to temporary register
+        ll_iseq->append(new Instruction(mov_opcode, src, r10));
+        
+        // Move 0 to destination
+        ll_iseq->append(new Instruction(mov_opcode, Operand(Operand::IMM_IVAL, 0), dest));
+        
+        // Subtract source from 0 in destination
+        ll_iseq->append(new Instruction(sub_opcode, r10, dest));
+        
+        return;
+    }
 
     if (hl_opcode == HINS_cmplte_l) {
         

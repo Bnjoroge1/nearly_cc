@@ -940,11 +940,14 @@ void HighLevelCodegen::visit_implicit_conversion(Node *n) {
         
         // Choose appropriate conversion instruction
         HighLevelOpcode conv_op;
-        if (source_type->get_basic_type_kind() == BasicTypeKind::INT && 
+        if (source_type->get_basic_type_kind() == BasicTypeKind::CHAR && 
+            dest_type->get_basic_type_kind() == BasicTypeKind::INT) {
+            conv_op = HINS_sconv_bl;  // signed char to int
+        }
+        else if (source_type->get_basic_type_kind() == BasicTypeKind::INT && 
             dest_type->get_basic_type_kind() == BasicTypeKind::LONG) {
             conv_op = HINS_sconv_lq;  // signed int to long
         }
-        // Add other conversions as needed
         
         get_hl_iseq()->append(new Instruction(conv_op,
             Operand(Operand::VREG, dest_vreg),
