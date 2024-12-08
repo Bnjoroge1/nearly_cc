@@ -21,6 +21,7 @@
 #include "peephole_ll.h"
 #include "lowlevel_opt.h"
 #include "loop_constant_opt.h"
+#include "modulo_reduction_opt.h"
 #include "cfg.h"
 #include "lowlevel.h" 
 
@@ -37,23 +38,20 @@ void LowLevelOpt::optimize(std::shared_ptr<Function> function) {
   // Get the low-level instruction sequence
   std::shared_ptr<InstructionSequence> ll_iseq = function->get_ll_iseq();
   
-  // Build CFG
+  // Build initial CFG
   auto ll_cfg_builder = make_lowlevel_cfg_builder(ll_iseq);
   std::shared_ptr<ControlFlowGraph> ll_cfg = ll_cfg_builder.build();
 
-  // Apply loop constant optimization
+  // Apply modulo reduction optimization first
+  ModuloReductionOpt mod_opt(ll_cfg);
+  ll_cfg = mod_opt.transform_cfg();
+
+  // Then apply loop constant optimization
   LoopConstantOpt loop_opt(ll_cfg);
   ll_cfg = loop_opt.transform_cfg();
 
   // Convert back to instruction sequence
   ll_iseq = ll_cfg->create_instruction_sequence();
-  
-  // Copy over any block labels and properties
-  if (ll_iseq->has_block_label()) {
-    ll_iseq->set_block_label(function->get_name());
-  }
-  
-  // Set the instruction sequence back in the function
   function->set_ll_iseq(ll_iseq);
 }
 
