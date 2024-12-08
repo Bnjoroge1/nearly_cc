@@ -123,31 +123,32 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
     Node *funcdef_ast = m_function->get_funcdef_ast();
     assert(funcdef_ast != nullptr);
 
-    // Step 1: Determine the maximum virtual register used
-    int max_vreg = 9;  // Start at 9 since vr0-vr9 are reserved
-    for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
-        Instruction *ins = *it;
-        for (unsigned j = 0; j < ins->get_num_operands(); j++) {
-            Operand op = ins->get_operand(j);
-            if (op.get_kind() == Operand::VREG) {
-                max_vreg = std::max(max_vreg, op.get_base_reg());
-            }
+// Step 1: Determine the maximum virtual register used (ALL registers)
+int max_vreg = 9;  // Start at 9 since vr0-vr9 are reserved
+for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
+    Instruction *ins = *it;
+    for (unsigned j = 0; j < ins->get_num_operands(); j++) {
+        Operand op = ins->get_operand(j);
+        if (op.get_kind() == Operand::VREG) {
+            max_vreg = std::max(max_vreg, op.get_base_reg());
+            //printf("max_vreg in: %d\n", max_vreg);
         }
     }
+}
+m_max_vreg = max_vreg;
 
-    m_max_vreg = max_vreg;
-
-    // Step 2: Calculate storage needed for vregs (vr10 and above)
-    int num_vregs_needing_storage = std::max(m_max_vreg - 9, 0);
-    int vreg_storage = num_vregs_needing_storage * 8;  // 8 bytes per vreg for alignment
-
+// Need storage from VREG_FIRST_ARG (1) up to highest_var_reg
+  int num_vregs_needing_storage = m_max_vreg - 10;  // This will give us storage for vr1-vr13
+//printf("num_vregs_needing_storage: %d\n", num_vregs_needing_storage);
+int vreg_storage = num_vregs_needing_storage * 8;
+    
     // Step 3: Get local storage size from the Function object
     int local_storage_size = m_function->get_local_storage_size();
+    //printf("local_storage_size: %d\n", local_storage_size);
 
     // Step 4: Calculate total storage needed
     m_total_memory_storage = local_storage_size + vreg_storage;
-   
-  
+    //printf("m_total_memory_storage: %d\n", m_total_memory_storage);
 
     // Step 5: Align to 16 bytes
     if (m_total_memory_storage % 16 != 0) {
@@ -155,8 +156,7 @@ std::shared_ptr<InstructionSequence> LowLevelCodeGen::translate_hl_to_ll(std::sh
     }
 
     // Step 6: Determine base offset for vregs
-    m_base_vreg_offset = -8 * num_vregs_needing_storage;
-    
+    m_base_vreg_offset = -m_total_memory_storage;
 
     // Step 7: Translate each high-level instruction to low-level
     for (auto it = hl_iseq->cbegin(); it != hl_iseq->cend(); ++it) {
@@ -707,12 +707,15 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
     // Handle memory references (array accesses or variables)
     if (hl_op.is_memref()) {
         int vreg_num = hl_op.get_base_reg();
+        //f("vreg_num for memory reference: %d\n", vreg_num);
         
         // For array element access (indirect memory reference)
         if (hl_op.get_kind() == Operand::VREG_MEM) {
+            //printf("vreg_mem\n");
             // Load the computed address into r11
             Operand addr = Operand(Operand::MREG64_MEM_OFF, MREG_RBP, 
                 m_base_vreg_offset + (8 * (vreg_num - VREG_FIRST_LOCAL)));
+            //f("addr: %d\n", addr.get_imm_ival());
             ll_iseq->append(new Instruction(MINS_MOVQ, addr, 
                 Operand(Operand::MREG64, MREG_R11)));
             // Return memory reference using that address
@@ -721,17 +724,35 @@ Operand LowLevelCodeGen::get_ll_operand(Operand hl_op, int size, std::shared_ptr
         
         // For direct memory access
         long offset = hl_op.has_imm_ival() ? hl_op.get_imm_ival() : 0;
+        //f("offset for direct memory reference: %ld\n", offset);
         
         // Handle array base and virtual registers
-        if (vreg_num >= VREG_FIRST_LOCAL) {
+        // For direct memory access
+if (vreg_num >= VREG_FIRST_LOCAL) {
             int base_offset;
+            //printf("vreg_num for direct memory reference: %d\n", vreg_num);
             // Check if this is from a localaddr instruction (array base)
-            if (hl_op.get_kind() == Operand::VREG && 
-                offset == 0) {  // localaddr always has offset 0
-                base_offset = -8;  // Arrays start at -8(%rbp)
-            } else {
-                base_offset = m_base_vreg_offset + (8 * (vreg_num - VREG_FIRST_LOCAL));
+            if (hl_op.get_kind() == Operand::VREG && offset == 0) {
+        // Arrays start at -16(%rbp) in main
+        base_offset = -(8);  // Local storage offset
+        //printf(" localaddr instruction\n");
+    } else {
+        // Calculate offset from bottom of stack frame
+        // Account for both local storage and vreg storage
+        int local_storage = m_function->get_local_storage_size();
+        if (local_storage > 0) {
+            // Align local_storage to 16 bytes if needed
+            if (local_storage % 16 != 0) {
+                local_storage += (16 - (local_storage % 16));
             }
+            base_offset = -(local_storage + m_total_memory_storage - (8 * (vreg_num - 1)));
+            //f("local_storage: %d\n", local_storage);
+            //printf("base_offset: %d\n", base_offset);
+        } else {
+            base_offset = -(m_total_memory_storage - (8 * (vreg_num - 1)));
+            //printf("base_offset less than 0: %d\n", base_offset);
+        }
+    }
             return Operand(Operand::MREG64_MEM_OFF, MREG_RBP, base_offset + offset);
         }
         

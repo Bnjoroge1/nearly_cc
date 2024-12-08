@@ -110,7 +110,7 @@ depend : $(GENERATED_SRCS) $(GENERATED_HDRS)
 
 depend.mak :
 	touch $@
-
+test:
 clean :
 	rm -f build/*.o depend.mak $(GENERATED_SRCS) $(GENERATED_HDRS) \
 		build/parse.output $(EXE)

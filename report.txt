@@ -1,12 +1,11 @@
-
-
+I used this input file: 
 long read_i64(void);
 void print_i64(long n);
 void print_nl(void);
 
 int main(void) {
     long n;
-    n = 1000000000;  // Much larger number of iterations
+    n = 100000000;  // Much larger number of iterations
     long prev;
     prev = 0L;
     long curr;
@@ -39,3 +38,5 @@ int main(void) {
 
     return 0;
 }
+
+Initially I got this output: 

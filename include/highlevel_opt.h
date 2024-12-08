@@ -24,6 +24,7 @@
 #include <memory>
 #include "options.h"
 #include "function.h"
+#include "cfg.h"
 
 //! HighLevelOpt is responsible for doing optimizations
 //! on the high-level IR for a Function.
@@ -34,6 +35,8 @@ private:
 
   // helper functions can use this to access the Function
   std::shared_ptr<Function> m_function;
+  // Helper methods for register allocation
+  void update_instruction_registers(std::shared_ptr<InstructionSequence> iseq);
 
   // no value semantics
   HighLevelOpt(const HighLevelOpt &);

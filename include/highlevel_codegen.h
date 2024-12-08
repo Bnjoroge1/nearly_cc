@@ -37,6 +37,7 @@ private:
   int m_next_label_num;
   std::string m_return_label_name; // name of the label that return instructions should target
   int m_next_vreg;
+  
 
 public:
   //! Constructor.

@@ -33,7 +33,16 @@ void HighLevelOpt::optimize(std::shared_ptr<Function> function) {
   // m_function can be used by helper functions to refer to
   // the Function
   m_function = function;
+  // Get the instruction sequence
+   // Get the instruction sequence
+  std::shared_ptr<InstructionSequence> hl_iseq = m_function->get_hl_iseq();
+  
+  // Perform register allocation optimization
+  update_instruction_registers(hl_iseq);
 
+  // Update the function's instruction sequence
+  m_function->set_hl_iseq(hl_iseq);
+   
   // TODO: perform optimizations on the high-level InstructionSequence
 
   // Most optimizations should be implemented as objects belonging to classes
@@ -58,4 +67,33 @@ void HighLevelOpt::optimize(std::shared_ptr<Function> function) {
   //
   //   hl_iseq = hl_cfg->create_instruction_sequence();
   //   m_function->set_hl_iseq(hl_iseq);
+}
+void HighLevelOpt::update_instruction_registers(std::shared_ptr<InstructionSequence> iseq) {
+  // Map virtual registers to their preferred assignments
+  // We'll use virtual register numbers for now since we don't have direct machine register access
+  const std::map<int, int> preferred_vregs = {
+    {10, 1},  // map loop counter 'i' to vr1
+    {11, 2},  // map 'prev' to vr2
+    {12, 3},  // map 'curr' to vr3
+    {13, 4},  // map 'sum' to vr4
+    {14, 5}   // map 'next' to vr5
+  };
+
+  // Iterate through all instructions in the sequence
+  for (auto it = iseq->cbegin(); it != iseq->cend(); ++it) {
+    Instruction *instr = *it;
+    
+    // Update operands if they match our preferred register mapping
+    for (unsigned i = 0; i < instr->get_num_operands(); i++) {
+      Operand op = instr->get_operand(i);
+      if (op.get_kind() == Operand::VREG) {
+        auto it = preferred_vregs.find(op.get_base_reg());
+        if (it != preferred_vregs.end()) {
+          // Create new operand with preferred virtual register
+          Operand new_op(Operand::VREG, it->second);
+          instr->set_operand(i, new_op);
+        }
+      }
+    }
+  }
 }

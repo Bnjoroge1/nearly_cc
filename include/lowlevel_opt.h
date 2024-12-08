@@ -34,7 +34,8 @@ private:
 
   // helper functions can use this to access the Function
   std::shared_ptr<Function> m_function;
-
+  void eliminate_redundant_moves(std::shared_ptr<InstructionSequence> iseq);
+    void allocate_registers(std::shared_ptr<InstructionSequence> iseq);
   // no value semantics
   LowLevelOpt(const LowLevelOpt &);
   LowLevelOpt &operator=(const LowLevelOpt &);

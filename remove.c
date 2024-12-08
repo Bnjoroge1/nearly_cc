@@ -1,12 +1,15 @@
-// test for an integer promotion
+#include <stdio.h>
 
-void print_i32(int n);
-void print_nl(void);
+void print_i64(long n) {
+    printf("%ld", n);
+}
 
-int main(void) {
-  char c;
-  c = -67;
-  print_i32(c);
-  print_nl();
-  return 0;
+void print_nl(void) {
+    printf("\n");
+}
+
+long read_i64(void) {
+    long val;
+    scanf("%ld", &val);
+    return val;
 }
