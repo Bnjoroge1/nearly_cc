@@ -22,8 +22,11 @@
 #define LOWLEVEL_OPT_H
 
 #include <memory>
-#include "options.h"
+#include "cfg.h"
+#include "instruction.h"
 #include "function.h"
+#include "options.h"
+
 
 //! LowLevelOpt is responsible for doing optimizations
 //! on the low-level (x64-64) IR for a Function.

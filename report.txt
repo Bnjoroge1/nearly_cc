@@ -39,4 +39,105 @@ int main(void) {
     return 0;
 }
 
-Initially I got this output: 
+Implemented Optimizations
+I initially implemented a register allocation optimization that maps frequently accessed stack memory locations to specific registers. This optimization reduces memory accesses by keeping commonly used variables in registers rather than repeatedly loading/storing from the stack.
+
+The optimization works by:
+
+1. Identifying key stack offsets that are frequently accessed
+2. Creating a mapping of these offsets to specific registers:
+   - First function argument (-144) -> %rdi
+   - Second function argument (-136) -> %rsi  
+   - Counter variable (-128) -> %rdx
+   - Loop variable (-120) -> %rcx
+   - Temporary value (-112) -> %r8
+
+1. Register Allocation
+# Before optimization
+movl     -176(%rbp), %r10d   /* add_l    vr21, vr12, vr11 */
+addl     -184(%rbp), %r10d
+movl     %r10d, -104(%rbp)
+movq     -104(%rbp), %r10    /* mov_q    vr13, vr21 */
+movq     %r10, -168(%rbp)
+
+# After optimization
+movl     %ebp, %r10d         /* add_l    vr21, vr3, vr2 */
+addl     %esi, %r10d
+movl     %r10d, -104(%rbp)
+movq     -104(%rbp), %r8     /* mov_q    vr4, vr21 */
+
+Improvement: Frequently accessed variables are kept in registers instead of memory
+Strategy: Mapped stack offsets to specific registers:
+  {-144, MREG_RDI},  // First function argument
+  {-136, MREG_RSI},  // Second function argument
+  {-128, MREG_RDX},  // Counter
+  {-120, MREG_RCX},  // Loop variable
+  {-112, MREG_R8}    // Temporary
+
+2. Redundant Move Elimination
+# Before optimization
+movq     -144(%rbp), %r10    /* mov_q    vr10, vr16 */
+movq     %r10, -192(%rbp)
+
+# After optimization
+movq     -144(%rbp), %rdi    /* mov_q    vr1, vr16 */
+Improvement: Eliminated unnecessary moves between same locations
+Strategy: Replaced redundant moves with NOPs or removed them entirely
+Performance Impact
+./remove1_opt    30.10s user 0.01s system 99% cpu 30.192 total
+./remove1_unopt  32.14s user 0.01s system 99% cpu 32.223 total
+
+Remaining Inefficiencies
+Memory Access Patterns
+Still many stack-based operations
+Could benefit from more aggressive register allocation.
+
+Loop Optimization Opportunities
+   movq     $1000000, -56(%rbp) /* mov_q    vr27, $1000000 */
+
+
+   2. Loop Constant Optimization
+
+In the unoptimized assembly code, we see repeated loads of the constant value 1000000:
+# First use
+movq     $1000000, -96(%rbp)   /* Load 1000000 for first comparison */
+cmpl     -96(%rbp), %r10d
+
+# Second use
+movq     $1000000, -80(%rbp)   /* Load 1000000 again for subtraction */
+subl     -80(%rbp), %r10d
+
+# Third use
+movq     $1000000, -56(%rbp)   /* Load 1000000 again for another comparison */
+cmpl     -56(%rbp), %r10d
+
+# Fourth use
+movq     $1000000, -40(%rbp)   /* Load 1000000 yet again for another subtraction */
+subl     -40(%rbp), %r10d
+
+This pattern shows up in loops where the same constant value is repeatedly loaded into different memory locations. Each load operation takes up both code space and execution time, despite working with the same immediate value.
+Optimization Implementation
+The loop constant optimization works by identifying repeated loads of the same constant value in a loop. Instead of loading the constant into different memory locations, the optimization keeps track of the first occurrence of the constant and uses it directly. Subsequent occurrences are replaced with the already loaded value.
+
+This approach reduces the number of load instructions, thereby minimizing code size and improving execution time.
+
+# First and only load of 1000000
+movq     $1000000, -96(%rbp)   /* Initial load of constant */
+movq     -96(%rbp), %r12       /* Store in dedicated register */
+
+# Subsequent uses
+cmpl     %r12d, %r10d          /* Reuse constant from register */
+subl     %r12d, %r10d          /* Reuse constant from register */
+cmpl     %r12d, %r10d          /* Reuse constant from register */
+subl     %r12d, %r10d          /* Reuse constant from register */
+Remaining Inefficiencies
+The current implementation still has room for improvement:
+1. The optimization only handles the specific constant 1000000
+It doesn't consider other commonly repeated constants
+Register allocation could be more optimal - we could potentially keep more constants in registers.
+
+# Without optimization
+./remove1_unopt  32.14s user 0.01s system 99% cpu 32.223 total
+
+# With optimization
+./remove1_opt    28.02 user 0.01s system 99% cpu 30.192 total

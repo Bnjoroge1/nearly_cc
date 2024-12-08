@@ -24,7 +24,7 @@ AST_SRCS = $(shell ls ast/*.cpp)
 DRIVER_SRCS = $(shell ls driver/*.cpp)
 HL_CODEGEN_SRCS = $(shell ls hl_codegen/*.cpp)
 LINEAR_IR_SRCS = $(shell ls linear_ir/*.cpp)
-LL_CODEGEN_SRCS = $(shell ls ll_codegen/*.cpp)
+LL_CODEGEN_SRCS = $(shell ls ll_codegen/*.cpp) 
 SEMA_SRCS = $(shell ls sema/*.cpp)
 
 SRCS = $(AST_SRCS) $(DRIVER_SRCS) $(HL_CODEGEN_SRCS) $(LINEAR_IR_SRCS) \
